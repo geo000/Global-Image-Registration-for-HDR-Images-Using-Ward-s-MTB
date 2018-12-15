@@ -4,60 +4,83 @@
 
 #ifndef __IMAGE_CPP__
 #define __IMAGE_CPP__
+
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #include "Image.h"
 
+
 #define STB_IMAGE_IMPLEMENTATION
+
 #include "../stb-master/stb_image.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+
 #include "../stb-master/stb_image_write.h"
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "../stb-master/stb_image_resize.h"
+
+
+using namespace std;
+
+Image::Image() {
+
+}
+
+Image::Image(int _heigth, int _width) {
+
+    height = _heigth;
+    width = _width;
+
+    MTB = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    EBM = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    GRAY = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+}
 
 Image::Image(char *filename) {
-    if(read_Img(filename))
-    {
+    if (read_Img(filename)) {
         convert2_grayscale();
-        MTB = (PIXEL *) malloc(width * height * sizeof(PIXEL));
-        EBM = (PIXEL *) malloc(width * height * sizeof(PIXEL));
-        find_MTB_EBM(GRAY,MTB,EBM,height,width);
-        write_all();
     }
 }
 
-bool Image::read_Img(char* filename) {
+
+bool Image::read_Img(char *filename) {
     img = stbi_load(filename, &width, &height, &bpp, 3);
 
-    if(img){ std::cout << filename << " Read Successfully\n"; return true;}
-    else{ std::cout << filename << " Reading Failed\n"; return false;}
+    if (img) {
+        std::cout << filename << " Read Successfully\n";
+        return true;
+    } else {
+        std::cout << filename << " Reading Failed\n";
+        return false;
+    }
 }
 
 void Image::convert2_grayscale() {
 
-    GRAY=(PIXEL*)malloc(width*height*sizeof(PIXEL));
+    GRAY = (PIXEL *) malloc(width * height * sizeof(PIXEL));
 
-    int index=0;
-    int gray_index=0;
+    int index = 0;
+    int gray_index = 0;
 
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
-            GRAY[gray_index]=(54*img[index+0] + 183*img[index+1] + 19*img[index+2]) / 256.0f;
+            GRAY[gray_index] = (54 * img[index + 0] + 183 * img[index + 1] + 19 * img[index + 2]) / 256.0f;
 
             gray_index++;
-            index+=3;
+            index += 3;
         }
     }
 }
 
-int Image::find_median(int _height, int _width, const PIXEL* input) {
+int Image::find_median(int _height, int _width, const PIXEL *input) {
 
     int median;
 
     int hist[COLOR];
-    memset(hist,0,COLOR*sizeof(int));
+    memset(hist, 0, COLOR * sizeof(int));
 
-    int index=0;
+    int index = 0;
 
     for (int i = 0; i < _height; i++) {
         for (int j = 0; j < _width; j++) {
@@ -67,11 +90,10 @@ int Image::find_median(int _height, int _width, const PIXEL* input) {
     }
 
     int half_way = _height * _width / 2;
-    int sum=0;
-    for (int k = 0; k < COLOR ; k++) {
+    int sum = 0;
+    for (int k = 0; k < COLOR; k++) {
         sum += hist[k];
-        if(sum > half_way)
-        {
+        if (sum > half_way) {
             median = k;
             return median;
         }
@@ -106,104 +128,130 @@ void Image::find_MTB_EBM(const PIXEL *input, PIXEL *_MTB, PIXEL *_EBM, int _heig
 }
 
 void Image::write_all() {
-    stbi_write_png("gray.png", width, height, 1, GRAY, width);
-    stbi_write_png("mtb.png", width, height, 1, MTB, width);
-    stbi_write_png("exclusion.png", width, height, 1, EBM, width);
+    stbi_write_png("../output/gray.png", width, height, 1, GRAY, width);
+    stbi_write_png("../output/mtb.png", width, height, 1, MTB, width);
+    stbi_write_png("../output/exclusion.png", width, height, 1, EBM, width);
 }
 
-PIXEL* Image::operator&(const Image &input) {
+int Image::count_error(const PIXEL *input, int height, int width) {
+    int res = 0;
 
-    if(compare_size(input))
-    {
+    int index = 0;
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            if (input[index] > 0)
+                res++;
+            index++;
+        }
+    }
+
+    return res;
+
+}
+
+PIXEL *Image::apply_and(const PIXEL *left, const PIXEL *right, int height, int width) {
+
+    PIXEL *res = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+
+    int index = 0;
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            res[index] = left[index] & right[index];
+            index++;
+        }
+    }
+
+    return res;
+
+}
+
+PIXEL *Image::operator^(const Image &input) {
+
+    if (compare_size(input)) {
         PIXEL *res = (PIXEL *) malloc(width * height * sizeof(PIXEL));
 
-        int index=0;
+        int index = 0;
         for (int i = 0; i < height; i++) {
             for (int j = 0; j < width; j++) {
-                res[index] = this->MTB[index] & input.MTB[index];
+                res[index] = this->MTB[index] ^ input.shiftedMTB[index];
                 index++;
             }
         }
 
         return res;
 
-    } else
-    {
-        std::cout<<"DIMENSIONS NOT EQUAL"<<std::endl;
+    } else {
+        std::cout << "DIMENSIONS NOT EQUAL" << std::endl;
         return NULL;
     }
 }
 
-PIXEL* Image::operator^(const Image &input) {
+void Image::shift(int x, int y, int edge_values) {
 
-    if(compare_size(input))
-    {
-        PIXEL *res = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    if (x == 0 && y == 0) return;
 
-        int index=0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                res[index] = this->MTB[index] ^ input.MTB[index];
-                index++;
+    PIXEL *tmp = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    memset(tmp, edge_values, width * height * sizeof(PIXEL));
+    PIXEL *tmp2 = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    memset(tmp2, edge_values, width * height * sizeof(PIXEL));
+
+    //both of them are positive
+    if (x >= 0 && y >= 0) {
+        for (int i = 0; i < height - y; ++i) {
+            for (int j = 0; j < width - x; ++j) {
+                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
             }
         }
-
-        return res;
-
-    } else
-    {
-        std::cout<<"DIMENSIONS NOT EQUAL"<<std::endl;
-        return NULL;
+        return;
     }
-}
 
-PIXEL* Image::operator|(const Image &input) {
-
-    if(compare_size(input))
-    {
-        PIXEL *res = (PIXEL *) malloc(width * height * sizeof(PIXEL));
-
-        int index=0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                res[index] = this->MTB[index] | input.MTB[index];
-                index++;
+    //both of them are negative
+    if (x < 0 && y < 0) {
+        for (int i = -y; i < height; ++i) {
+            for (int j = -x; j < width; ++j) {
+                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
             }
         }
-
-        return res;
-
-    } else
-    {
-        std::cout<<"DIMENSIONS NOT EQUAL"<<std::endl;
-        return NULL;
     }
+
+
+    //x neg y pos
+    if (x < 0 && y >= 0) {
+        for (int i = 0; i < height - y; ++i) {
+            for (int j = -x; j < width; ++j) {
+                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
+            }
+        }
+    }
+
+
+    //x pos y neg
+    if (x >= 0 && y < 0) {
+        for (int i = -y; i < height; ++i) {
+            for (int j = 0; j < width - x; ++j) {
+                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
+            }
+        }
+    }
+
+    if (!shiftedMTB) {
+        delete shiftedMTB;
+        delete shiftedEMB;
+        shiftedMTB = NULL;
+        shiftedEMB = NULL;
+    }
+    shiftedMTB = tmp;
+    shiftedEMB = tmp2;
+
 }
 
 bool Image::compare_size(const Image &input) {
-    return this->height != input.getHeight() && this->width != input.getWidth();
+    return this->height == input.getHeight() && this->width == input.getWidth();
 }
 
-void Image::make_pyramid() {
 
-    int _height = height, _width = width;
-    gray_pyramid[0] = GRAY;
-    mtb_pyramid[0] = MTB;
-    ebm_pyramid[0] = EBM;
-
-    for (int i = 1; i < 6; i++) {
-
-        gray_pyramid[i] = (PIXEL *) malloc((_height/2) * (_width/2) * sizeof(PIXEL));
-
-        stbir_resize_uint8(gray_pyramid[i-1] , _width , _height , 0,
-                           gray_pyramid[i], (_width/2), (_height/2), 0, 1);
-
-        _height/=2;
-        _width/=2;
-
-        mtb_pyramid[i] = (PIXEL *) malloc(_height * _width * sizeof(PIXEL));
-        ebm_pyramid[i] = (PIXEL *) malloc(_height * _width * sizeof(PIXEL));
-        find_MTB_EBM(gray_pyramid[i],mtb_pyramid[i],ebm_pyramid[i],_height,_width);
-    }
-}
 #endif

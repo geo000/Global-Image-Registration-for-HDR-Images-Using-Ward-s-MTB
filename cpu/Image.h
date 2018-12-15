@@ -11,37 +11,42 @@
 #define COLOR 256
 #define PYRAMID_LEVEL 6
 
-class Image
-{
-
-private:
-
-    int width, height, bpp;
-    PIXEL* img;
-    PIXEL* MTB;
-    PIXEL* EBM;
-    PIXEL* GRAY;
-
-    PIXEL* gray_pyramid[6];
-    PIXEL* mtb_pyramid[6];
-    PIXEL* ebm_pyramid[6];
+class Image {
 
 public:
 
-    Image(char* filename);
+    int width, height, bpp;
+    PIXEL *img;
+    PIXEL *MTB;
+    PIXEL *EBM;
+    PIXEL *GRAY;
+    PIXEL *shiftedMTB;
+    PIXEL *shiftedEMB;
+
+//    PIXEL *gray_pyramid[6];
+//    PIXEL *mtb_pyramid[6];
+//    PIXEL *ebm_pyramid[6];
+
+public:
+
+    Image();
+
+    Image(int _heigth, int _width);
+
+    Image(char *filename);
 
     virtual ~Image() {
-        free(img);
-        free(MTB);
-        free(EBM);
-        free(GRAY);
+//        free(img);
+//        free(MTB);
+//        free(EBM);
+//        free(GRAY);
     }
 
     PIXEL *getImg() const {
         return img;
     }
 
-    PIXEL *getMTB() const {
+    PIXEL *getMTB() {
         return MTB;
     }
 
@@ -65,22 +70,27 @@ public:
         return bpp;
     }
 
-    bool read_Img(char* filename);
+    bool read_Img(char *filename);
 
-    int find_median(int _height, int _width, const PIXEL* input);
+    static int find_median(int _height, int _width, const PIXEL *input);
 
     void convert2_grayscale();
 
-    void find_MTB_EBM(const PIXEL *input, PIXEL *_MTB, PIXEL *_EBM, int _height, int _width);
+    static void find_MTB_EBM(const PIXEL *input, PIXEL *_MTB, PIXEL *_EBM, int _height, int _width);
+
+
+    void shift(int x, int y, int edge_values = 0);
+
+    static PIXEL *apply_and(const PIXEL *left, const PIXEL *right, int height, int width);
+
+    static int count_error(const PIXEL *input, int height, int width);
+
+    PIXEL *operator^(const Image &input);
+
+    bool compare_size(const Image &input);
 
     void write_all();
 
-    PIXEL* operator&(const Image& input);
-    PIXEL* operator^(const Image& input);
-    PIXEL* operator|(const Image& input);
-
-    bool compare_size(const Image& input);
-
-    void make_pyramid();
 };
+
 #endif
