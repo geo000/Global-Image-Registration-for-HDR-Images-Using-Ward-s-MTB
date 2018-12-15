@@ -9,19 +9,22 @@
 
 #define PIXEL uint8_t
 #define COLOR 256
+#define PYRAMID_LEVEL 6
 
 class Image
 {
 
 private:
 
-    int median;
     int width, height, bpp;
     PIXEL* img;
     PIXEL* MTB;
     PIXEL* EBM;
     PIXEL* GRAY;
-    int hist[COLOR];
+
+    PIXEL* gray_pyramid[6];
+    PIXEL* mtb_pyramid[6];
+    PIXEL* ebm_pyramid[6];
 
 public:
 
@@ -50,10 +53,6 @@ public:
         return GRAY;
     }
 
-    int getMedian() const {
-        return median;
-    }
-
     int getWidth() const {
         return width;
     }
@@ -66,13 +65,22 @@ public:
         return bpp;
     }
 
-    void read_Img(char* filename);
-    void find_median();
+    bool read_Img(char* filename);
+
+    int find_median(int _height, int _width, const PIXEL* input);
 
     void convert2_grayscale();
 
-    void find_MTB_EBM();
+    void find_MTB_EBM(const PIXEL *input, PIXEL *_MTB, PIXEL *_EBM, int _height, int _width);
 
     void write_all();
+
+    PIXEL* operator&(const Image& input);
+    PIXEL* operator^(const Image& input);
+    PIXEL* operator|(const Image& input);
+
+    bool compare_size(const Image& input);
+
+    void make_pyramid();
 };
 #endif
