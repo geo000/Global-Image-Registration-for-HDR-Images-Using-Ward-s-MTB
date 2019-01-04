@@ -52,7 +52,7 @@ __global__ void AND(uint8_t* output, uint8_t* left, uint8_t *right, int width, i
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-	index = y * width + x;
+	int index = y * width + x;
 	output[index] = left[index] & right[index];
 }
 
@@ -61,7 +61,7 @@ __global__ void XOR(uint8_t* output, uint8_t* left, uint8_t *right, int width, i
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-	index = y * width + x;
+	int index = y * width + x;
 	output[index] = left[index] ^ right[index];
 }
 //
