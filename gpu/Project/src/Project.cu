@@ -108,6 +108,7 @@ int main(int argc, char *argv[]) {
 	cudaFree(output);
 
 	return 0;
+
 }
 
 ////

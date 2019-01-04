@@ -44,6 +44,7 @@ __global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size) {
 		gray[idx] = (54 * img[index] + 183 * img[index + 1]
 				+ 19 * img[index + 2]) / 256.0f;
 	}
+
 }
 
 __global__ void AND(uint8_t* output, uint8_t* left, uint8_t *right, int width, int size) {
