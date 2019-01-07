@@ -1,20 +1,29 @@
 //
 // Created by berkay on 14.12.2018.
 //
+#include <vector>
 #include "Image.h"
 #include "helper.h"
+#include "../stb-master/stb_image_write.h"
 
 using namespace std;
 
-int main(int argc, char *argv[]) {
-    Image temp("../input/1.JPG");
-    Image temp2("../input/3.JPG");
+typedef struct shift_pair {
+    shift_pair(int _x, int _y) {
+        x = _x;
+        y = _y;
+    }
 
+    int x;
+    int y;
+} shift_pair;
+
+shift_pair calculateOffsetOfTwoImages(std::vector<Image> &all_images, int ind1, int ind2) {
     Image *first[PYRAMID_LEVEL];
     Image *second[PYRAMID_LEVEL];
 
-    make_pyramid(first, temp);
-    make_pyramid(second, temp2);
+    make_pyramid(first, all_images[ind1]);
+    make_pyramid(second, all_images[ind2]);
 
     int curr_level = PYRAMID_LEVEL - 1;
     int curr_offset_x = 0;
@@ -34,27 +43,10 @@ int main(int argc, char *argv[]) {
                 int ys = curr_offset_y + j;
                 second[k]->shift(xs, ys);
                 PIXEL *xor_result = (*(first[k])) ^(*(second[k]));
-//
-//                Image a(first[k]->height, first[k]->width);
-//                a.MTB = first[k]->MTB;
-//                std::string name("../output/mtb1_result");
-//                name+=std::to_string(k);
-//                name += ".png";
-//                a.dataYaz(name.c_str());
-//                a.MTB=NULL;
-//
-//                Image b(second[k]->height, second[k]->width);
-//                b.MTB = second[k]->MTB;
-//                std::string name2("../output/mtb2_result");
-//                name2+=std::to_string(k);
-//                name2 += ".png";
-//                b.dataYaz(name2.c_str());
-//                b.MTB=NULL;
 
-
-                PIXEL *after_first_and = Image::apply_and(xor_result, first[k]->EBM, first[k]->height,
+                PIXEL *after_first_and = Image::apply_and(xor_result, first[k]->ebm, first[k]->height,
                                                           first[k]->width);
-                PIXEL *after_second_and = Image::apply_and(after_first_and, second[k]->shiftedEMB,
+                PIXEL *after_second_and = Image::apply_and(after_first_and, second[k]->shiftedEbm,
                                                            second[k]->height, second[k]->width);
 
                 int error = Image::count_error(after_second_and, second[k]->height, second[k]->width);
@@ -63,21 +55,78 @@ int main(int argc, char *argv[]) {
                     offset_return_y = ys;
                     min_error = error;
                 }
-
-//                delete[] xor_result;
-//                delete[] after_first_and;
-//                delete[] after_second_and;
-
             }
-
         }
     }
-//
+
     cout << "yapilmasi gereken x-y kaydirmasi: " << curr_offset_x << "  " << curr_offset_y << endl;
-//
-//    cout<<"shiftliyoz..."<<endl;
-//
-//    temp2.shift2(curr_offset_x, curr_offset_y);
+
+    return shift_pair(curr_offset_x, curr_offset_y);
+}
+
+int main(int argc, char *argv[]) {
+
+    std::vector<Image> all_images;
+    std::vector<shift_pair> all_shifts;
+
+    for (int l = 1; l < argc; ++l) {
+        all_images.emplace_back(argv[l]);
+    }
+
+    cout << "Total number of images provided: " << all_images.size() << endl;
+
+    int mid_img_index = all_images.size() / 2 + 1;
+
+    cout << "ilk part baslar ..." << endl;
+
+    for (int m = mid_img_index - 1; m >= 0; --m) {
+        all_shifts.emplace_back(calculateOffsetOfTwoImages(all_images, m + 1, m));
+    }
+
+    cout << " ilk parttaki imajlari shiftliyoruz tek tek ..." << endl;
+
+    int k = 0, eskiTotalX = 0, eskiTotalY = 0;
+    for (int m = mid_img_index - 1; m >= 0; --m) {
+        all_images[m].finalShift(all_shifts[k].x + eskiTotalX, all_shifts[k].y + eskiTotalY);
+        eskiTotalX += all_shifts[k].x;
+        eskiTotalY += all_shifts[k].y;
+        k++;
+        cout << "   shiftledik: x,y " << eskiTotalX << " " << eskiTotalY << endl;
+    }
+
+    cout << "ikinci part baslar ..." << endl;
+    all_shifts.clear();
+
+    for (int m = mid_img_index + 1; m < all_images.size(); ++m) {
+        all_shifts.emplace_back(calculateOffsetOfTwoImages(all_images, m - 1, m));
+    }
+
+    cout << " ikinci parttaki imajlari shiftliyoruz tek tek ..." << endl;
+
+    k = 0;
+    eskiTotalX = 0;
+    eskiTotalY = 0;
+    for (int m = mid_img_index + 1; m < all_images.size(); ++m) {
+        all_images[m].finalShift(all_shifts[k].x + eskiTotalX, all_shifts[k].y + eskiTotalY);
+        eskiTotalX += all_shifts[k].x;
+        eskiTotalY += all_shifts[k].y;
+        k++;
+        cout << "   shiftledik: x,y " << eskiTotalX << " " << eskiTotalY << endl;
+    }
+
+    cout << "dosyaya yaziyoruz tum imajlari tek tek ..." << endl;
+
+    //TODO write using loop
+    stbi_write_jpg("../output/out0.jpg", all_images[0].width, all_images[0].height, 1, all_images[0].shiftedImg,
+                   all_images[0].width);
+    stbi_write_jpg("../output/out1.jpg", all_images[1].width, all_images[1].height, 1, all_images[1].shiftedImg,
+                   all_images[1].width);
+    stbi_write_jpg("../output/out2.jpg", all_images[2].width, all_images[2].height, 1, all_images[2].shiftedImg,
+                   all_images[2].width);
+    stbi_write_jpg("../output/out3.jpg", all_images[3].width, all_images[3].height, 1, all_images[3].gray,
+                   all_images[3].width);
+    stbi_write_jpg("../output/out4.jpg", all_images[4].width, all_images[4].height, 1, all_images[4].shiftedImg,
+                   all_images[4].width);
 
     return 0;
 }

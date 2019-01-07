@@ -32,9 +32,9 @@ Image::Image(int _heigth, int _width) {
     height = _heigth;
     width = _width;
 
-    MTB = (PIXEL *) malloc(width * height * sizeof(PIXEL));
-    EBM = (PIXEL *) malloc(width * height * sizeof(PIXEL));
-    GRAY = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    mtb = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    ebm = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    gray = (PIXEL *) malloc(width * height * sizeof(PIXEL));
 }
 
 Image::Image(char *filename) {
@@ -58,14 +58,14 @@ bool Image::read_Img(char *filename) {
 
 void Image::convert2_grayscale() {
 
-    GRAY = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    gray = (PIXEL *) malloc(width * height * sizeof(PIXEL));
 
     int index = 0;
     int gray_index = 0;
 
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
-            GRAY[gray_index] = (54 * img[index + 0] + 183 * img[index + 1] + 19 * img[index + 2]) / 256.0f;
+            gray[gray_index] = (54 * img[index + 0] + 183 * img[index + 1] + 19 * img[index + 2]) / 256.0f;
 
             gray_index++;
             index += 3;
@@ -128,9 +128,9 @@ void Image::find_MTB_EBM(const PIXEL *input, PIXEL *_MTB, PIXEL *_EBM, int _heig
 }
 
 void Image::write_all() {
-    stbi_write_png("../output/gray.png", width, height, 1, GRAY, width);
-    stbi_write_png("../output/mtb.png", width, height, 1, MTB, width);
-    stbi_write_png("../output/exclusion.png", width, height, 1, EBM, width);
+    stbi_write_png("../output/gray.png", width, height, 1, gray, width);
+    stbi_write_png("../output/mtb.png", width, height, 1, mtb, width);
+    stbi_write_png("../output/exclusion.png", width, height, 1, ebm, width);
 }
 
 int Image::count_error(const PIXEL *input, int height, int width) {
@@ -173,7 +173,7 @@ PIXEL *Image::operator^(const Image &input) {
         int index = 0;
         for (int i = 0; i < height; i++) {
             for (int j = 0; j < width; j++) {
-                res[index] = this->MTB[index] ^ input.shiftedMTB[index];
+                res[index] = this->mtb[index] ^ input.shiftedMtb[index];
                 index++;
             }
         }
@@ -199,8 +199,8 @@ void Image::shift(int x, int y, int edge_values) {
     if (x >= 0 && y >= 0) {
         for (int i = 0; i < height - y; ++i) {
             for (int j = 0; j < width - x; ++j) {
-                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
-                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
+                tmp[y * width + x + i * width + j] = this->mtb[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
             }
         }
         return;
@@ -210,8 +210,8 @@ void Image::shift(int x, int y, int edge_values) {
     if (x < 0 && y < 0) {
         for (int i = -y; i < height; ++i) {
             for (int j = -x; j < width; ++j) {
-                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
-                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
+                tmp[y * width + x + i * width + j] = this->mtb[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
             }
         }
     }
@@ -221,8 +221,8 @@ void Image::shift(int x, int y, int edge_values) {
     if (x < 0 && y >= 0) {
         for (int i = 0; i < height - y; ++i) {
             for (int j = -x; j < width; ++j) {
-                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
-                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
+                tmp[y * width + x + i * width + j] = this->mtb[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
             }
         }
     }
@@ -232,25 +232,85 @@ void Image::shift(int x, int y, int edge_values) {
     if (x >= 0 && y < 0) {
         for (int i = -y; i < height; ++i) {
             for (int j = 0; j < width - x; ++j) {
-                tmp[y * width + x + i * width + j] = this->MTB[i * width + j];
-                tmp2[y * width + x + i * width + j] = this->EBM[i * width + j];
+                tmp[y * width + x + i * width + j] = this->mtb[i * width + j];
+                tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
             }
         }
     }
 
-    if (!shiftedMTB) {
-        delete shiftedMTB;
-        delete shiftedEMB;
-        shiftedMTB = NULL;
-        shiftedEMB = NULL;
+    if (!shiftedMtb) {
+        delete shiftedMtb;
+        delete shiftedEbm;
+        shiftedMtb = NULL;
+        shiftedEbm = NULL;
     }
-    shiftedMTB = tmp;
-    shiftedEMB = tmp2;
+    shiftedMtb = tmp;
+    shiftedEbm = tmp2;
 
 }
 
+
+void Image::finalShift(int x, int y, int edge_values) {
+
+    if (x == 0 && y == 0) return;
+
+    PIXEL *tmp = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    memset(tmp, edge_values, width * height * sizeof(PIXEL));
+    //PIXEL *tmp2 = (PIXEL *) malloc(width * height * sizeof(PIXEL));
+    //memset(tmp2, edge_values, width * height * sizeof(PIXEL));
+
+    //both of them are positive
+    if (x >= 0 && y >= 0) {
+        for (int i = 0; i < height - y; ++i) {
+            for (int j = 0; j < (width - x); j++) {
+                tmp[y * width + x + i * width + j] = this->gray[i * width + j];
+                //tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
+            }
+        }
+        return;
+    }
+
+    //both of them are negative
+    if (x < 0 && y < 0) {
+        for (int i = -y; i < height; ++i) {
+            for (int j = -x; j < width; j++) {
+                tmp[y * width + x + i * width + j] = this->gray[i * width + j];
+                //tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
+            }
+        }
+    }
+
+
+    //x neg y pos
+    if (x < 0 && y >= 0) {
+        for (int i = 0; i < height - y; ++i) {
+            for (int j = -x; j < width; j++) {
+                tmp[y * width + x + i * width + j] = this->gray[i * width + j];
+                //tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
+            }
+        }
+    }
+
+
+    //x pos y neg
+    if (x >= 0 && y < 0) {
+        for (int i = -y; i < height; ++i) {
+            for (int j = 0; j < (width - x); j++) {
+                tmp[y * width + x + i * width + j] = this->gray[i * width + j];
+                //tmp2[y * width + x + i * width + j] = this->ebm[i * width + j];
+            }
+        }
+    }
+
+    if (!shiftedImg) {
+        delete shiftedImg;
+        shiftedImg = NULL;
+    }
+    shiftedImg = tmp;
+}
+
 bool Image::compare_size(const Image &input) {
-    return this->height == input.getHeight() && this->width == input.getWidth();
+    return this->height == input.height && this->width == input.width;
 }
 
 
