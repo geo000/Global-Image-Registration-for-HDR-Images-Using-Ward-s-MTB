@@ -9,6 +9,7 @@
 
 #include "device_launch_parameters.h"
 #define BLOCK_SIZE 256
+#define COLOR 256
 
 //__global__ void transformKernel(float* output, cudaTextureObject_t texObj,
 //		int width, int height) {
@@ -45,7 +46,6 @@ __global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size) {
 		gray[idx] = (54 * img[index] + 183 * img[index + 1]
 				+ 19 * img[index + 2]) / 256.0f;
 	}
-
 }
 
 __global__ void histogram_smem_atomics(const uint8_t *input, int *out, int size)
@@ -77,14 +77,33 @@ __global__ void histogram_final_accum(int n, int *out)
   int tid = threadIdx.x;
   int i = tid;
   int total = 0;
+
   while(i < n)
   {
 	  total += out[i];
 	  i += BLOCK_SIZE;
   }
   __syncthreads();
+
   out[tid] = total;
+
 }
+
+__global__ void find_Median(int n, int *hist, int* median)
+{
+	int half_way = n / 2;
+
+	int sum = 0;
+
+	for (int k = 0; k < COLOR; k++) {
+		sum += hist[k];
+		if (sum > half_way) {
+			*median = k;
+			return;
+		}
+	}
+}
+
 
 __global__ void AND(uint8_t* output, uint8_t* left, uint8_t *right, int width, int size) {
 
@@ -103,6 +122,8 @@ __global__ void XOR(uint8_t* output, uint8_t* left, uint8_t *right, int width, i
 	int index = y * width + x;
 	output[index] = left[index] ^ right[index];
 }
+
+
 //
 //#endif
 

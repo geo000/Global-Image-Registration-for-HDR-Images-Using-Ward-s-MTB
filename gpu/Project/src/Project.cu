@@ -185,8 +185,6 @@ int main(int argc, char* argv[]) {
 
 		downsample<<<dimGrid, dimBlock>>>(output, _width, _height);
 
-		cudaDeviceSynchronize();
-
 		dimBlock=dim3(BLOCK_SIZE);
 
 		dimGrid=dim3(32);
@@ -200,17 +198,25 @@ int main(int argc, char* argv[]) {
 
 		histogram_final_accum<<<1, 256>>>(BLOCK_SIZE*dimGrid.x, out);
 
-		int res[256];
+//		int res[256];
 
-		cudaMemcpy(res, out, sizeof(int) * 256, cudaMemcpyDeviceToHost);
+//		cudaMemcpy(res, out, sizeof(int) * 256, cudaMemcpyDeviceToHost);
 
 		cudaDeviceSynchronize();
 
-		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * _width * _height);
+		int* median;
+		cudaMalloc((void **)&median, sizeof(int));
 
-		cudaMemcpy(gray_images[i-1], output, sizeof(uint8_t) * _width * _height, cudaMemcpyDeviceToHost);
+		find_Median<<<1, 1>>>(width*height, out, median);
 
-		stbi_write_png("/home/berkay/Desktop/textureTest.png", _width, _height, 1, gray_images[i-1], _width);
+//		int med[1];
+//		cudaMemcpy(med, median, sizeof(int), cudaMemcpyDeviceToHost);
+
+//		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * _width * _height);
+//
+//		cudaMemcpy(gray_images[i-1], output, sizeof(uint8_t) * _width * _height, cudaMemcpyDeviceToHost);
+//
+//		stbi_write_png("/home/berkay/Desktop/textureTest.png", _width, _height, 1, gray_images[i-1], _width);
 
 		cudaUnbindTexture(texRef);
 	}
