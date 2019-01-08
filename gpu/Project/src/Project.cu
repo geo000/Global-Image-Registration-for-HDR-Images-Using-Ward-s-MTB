@@ -187,6 +187,25 @@ int main(int argc, char* argv[]) {
 
 		cudaDeviceSynchronize();
 
+		dimBlock=dim3(BLOCK_SIZE);
+
+		dimGrid=dim3(32);
+
+		int* out;
+		cudaMalloc((void **)&out, BLOCK_SIZE * sizeof(int) * 32);
+
+		histogram_smem_atomics<<<dimGrid, dimBlock>>>(d_images_grayscale[i-1], out, width*height);
+
+		cudaDeviceSynchronize();
+
+		histogram_final_accum<<<1, 256>>>(BLOCK_SIZE*dimGrid.x, out);
+
+		int res[256];
+
+		cudaMemcpy(res, out, sizeof(int) * 256, cudaMemcpyDeviceToHost);
+
+		cudaDeviceSynchronize();
+
 		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * _width * _height);
 
 		cudaMemcpy(gray_images[i-1], output, sizeof(uint8_t) * _width * _height, cudaMemcpyDeviceToHost);

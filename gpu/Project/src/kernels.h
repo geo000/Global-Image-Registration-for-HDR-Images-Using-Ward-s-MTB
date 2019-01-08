@@ -8,6 +8,7 @@
 //#define __KERNELS_H__
 
 #include "device_launch_parameters.h"
+#define BLOCK_SIZE 256
 
 //__global__ void transformKernel(float* output, cudaTextureObject_t texObj,
 //		int width, int height) {
@@ -45,6 +46,44 @@ __global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size) {
 				+ 19 * img[index + 2]) / 256.0f;
 	}
 
+}
+
+__global__ void histogram_smem_atomics(const uint8_t *input, int *out, int size)
+{
+	__shared__ int smem[BLOCK_SIZE];
+
+	unsigned int tid = threadIdx.x;
+	unsigned int i = blockIdx.x * BLOCK_SIZE + tid;
+	unsigned int gridSize = BLOCK_SIZE * gridDim.x;
+
+	smem[tid] = 0;
+	__syncthreads();
+
+	uint8_t pixel;
+	while (i < size) {
+
+		pixel = input[i];
+		atomicAdd(&smem[pixel], 1);
+
+		i += gridSize;
+	}
+	__syncthreads();
+
+	out[blockIdx.x * BLOCK_SIZE + tid] = smem[tid];
+}
+
+__global__ void histogram_final_accum(int n, int *out)
+{
+  int tid = threadIdx.x;
+  int i = tid;
+  int total = 0;
+  while(i < n)
+  {
+	  total += out[i];
+	  i += BLOCK_SIZE;
+  }
+  __syncthreads();
+  out[tid] = total;
 }
 
 __global__ void AND(uint8_t* output, uint8_t* left, uint8_t *right, int width, int size) {
