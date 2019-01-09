@@ -1,113 +1,13 @@
 #include <iostream>
 #include "cuda_runtime.h"
-//#include "device_launch_parameters.h"
 #include "kernels.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-
-#include "../stb-master/stb_image.h"
-
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-
 #include "../stb-master/stb_image_write.h"
 
 #define PYRAMID_LEVEL 6
 
 using namespace std;
-
-//int main(int argc, char *argv[]) {
-//	int width, height, bpp;
-//	float *h_data;
-//	uint8_t *img_in, *img_out;
-//
-//	img_in = stbi_load(argv[1], &width, &height, &bpp, 3);
-//
-//	//stbi_write_png("/home/kca/Desktop/textureTestoriginal.png", width, height, 3, img_in, width * 3);
-//
-//	int usize = sizeof(uint8_t) * 3 * height * width;
-//	int size = sizeof(float) * height * width;
-//
-//	img_out = (uint8_t *) malloc(usize/4);
-//	h_data = (float *) malloc(size);
-//
-//	int k = 0;
-//	for (int var = 0; var < 3 * height * width; var += 3) {
-//		h_data[k++] = img_in[var];
-//	}
-//
-//	// Allocate CUDA array in device memory
-//	cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0, 0, 0,
-//			cudaChannelFormatKindFloat);
-//	cudaArray* cuArray;
-//	cudaMallocArray(&cuArray, &channelDesc, width, height);
-//
-//	// Copy to device memory some data located at address h_data
-//	// in host memory
-//	cudaMemcpyToArray(cuArray, 0, 0, h_data, size, cudaMemcpyHostToDevice);
-//
-//	// Specify texture
-//	struct cudaResourceDesc resDesc;
-//	memset(&resDesc, 0, sizeof(resDesc));
-//	resDesc.resType = cudaResourceTypeArray;
-//	resDesc.res.array.array = cuArray;
-//
-//	// Specify texture object parameters
-//	struct cudaTextureDesc texDesc;
-//	memset(&texDesc, 0, sizeof(texDesc));
-//	texDesc.addressMode[0] = cudaAddressModeClamp;
-//	texDesc.addressMode[1] = cudaAddressModeClamp;
-//	texDesc.filterMode = cudaFilterModeLinear;
-//	texDesc.readMode = cudaReadModeElementType;
-//	texDesc.normalizedCoords = 1;
-//
-//	// Create texture object
-//	cudaTextureObject_t texObj = 0;
-//	cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
-//
-//	// Allocate result of transformation in device memory
-//	float* output;
-//	cudaMalloc(&output, (width) * (height) * sizeof(float) / 4);
-//
-//	// Invoke kernel
-//	dim3 dimBlock(16, 16);
-//	dim3 dimGrid((width / 2 + dimBlock.x - 1) / dimBlock.x,
-//			(height / 2 + dimBlock.y - 1) / dimBlock.y);
-//	transformKernel<<<dimGrid, dimBlock>>>(output, texObj, width/2, height/2);
-//
-//	float *cikti = (float *) malloc(sizeof(float) * width * height / 4);
-//
-//	cudaMemcpy(cikti, output, size/4, cudaMemcpyDeviceToHost);
-//
-//	k = 0;
-//	for (int var = 0; var < 3 * width * height / 4; var += 3) {
-//		img_out[var] = img_out[var + 1] = img_out[var + 2] = cikti[k++];
-//	}
-//
-//	stbi_write_png("/home/kca/Desktop/textureTest.png", width/2, height/2,
-//			3, img_out, width/2 * 3);
-//
-//	// Destroy texture object
-//	cudaDestroyTextureObject(texObj);
-//
-//	// Free device memory
-//	cudaFreeArray(cuArray);
-//	cudaFree(output);
-//
-//	return 0;
-//}
-
-bool read_Img(char *filename, uint8_t*& img, int* width, int* height, int* bpp) {
-
-	img = stbi_load(filename, width, height, bpp, 3);
-
-	if (img) {
-		std::cout << filename << " Read Successfully\n";
-		return true;
-	} else {
-		std::cout << filename << " Reading Failed\n";
-		return false;
-	}
-}
 
 int main(int argc, char* argv[]) {
 
@@ -185,13 +85,38 @@ int main(int argc, char* argv[]) {
 
 		downsample<<<dimGrid, dimBlock>>>(output, _width, _height);
 
+		dimBlock=dim3(BLOCK_SIZE);
+
+		dimGrid=dim3(32);
+
+		int* out;
+		cudaMalloc((void **)&out, BLOCK_SIZE * sizeof(int) * 32);
+
+		histogram_smem_atomics<<<dimGrid, dimBlock>>>(d_images_grayscale[i-1], out, width*height);
+
 		cudaDeviceSynchronize();
 
-		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * _width * _height);
+		histogram_final_accum<<<1, 256>>>(BLOCK_SIZE*dimGrid.x, out);
 
-		cudaMemcpy(gray_images[i-1], output, sizeof(uint8_t) * _width * _height, cudaMemcpyDeviceToHost);
+//		int res[256];
 
-		stbi_write_png("/home/berkay/Desktop/textureTest.png", _width, _height, 1, gray_images[i-1], _width);
+//		cudaMemcpy(res, out, sizeof(int) * 256, cudaMemcpyDeviceToHost);
+
+		cudaDeviceSynchronize();
+
+		int* median;
+		cudaMalloc((void **)&median, sizeof(int));
+
+		find_Median<<<1, 1>>>(width*height, out, median);
+
+//		int med[1];
+//		cudaMemcpy(med, median, sizeof(int), cudaMemcpyDeviceToHost);
+
+//		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * _width * _height);
+//
+//		cudaMemcpy(gray_images[i-1], output, sizeof(uint8_t) * _width * _height, cudaMemcpyDeviceToHost);
+//
+//		stbi_write_png("/home/berkay/Desktop/textureTest.png", _width, _height, 1, gray_images[i-1], _width);
 
 		cudaUnbindTexture(texRef);
 	}

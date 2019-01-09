@@ -1,28 +1,13 @@
-/*
- * kernels.h
- *
- *      Author: berkay
- */
-
-//#ifndef __KERNELS_H__
-//#define __KERNELS_H__
+#ifndef __KERNELS_H__
+#define __KERNELS_H__
 
 #include "device_launch_parameters.h"
 
-//__global__ void transformKernel(float* output, cudaTextureObject_t texObj,
-//		int width, int height) {
-//
-//	// Calculate normalized texture coordinates
-//	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
-//	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
-//
-//	float u = x / (float) width ;
-//	float v = y / (float) height ;
-//
-//	// Read from texture and write to global memory
-//	output[y * width + x] = tex2D<float>(texObj, u, v);
-//
-//}
+#define STB_IMAGE_IMPLEMENTATION
+#include "../stb-master/stb_image.h"
+
+#define BLOCK_SIZE 256
+#define COLOR 256
 
 texture<unsigned char,  2,  cudaReadModeNormalizedFloat> texRef;
 
@@ -44,7 +29,82 @@ __global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size) {
 		gray[idx] = (54 * img[index] + 183 * img[index + 1]
 				+ 19 * img[index + 2]) / 256.0f;
 	}
+}
 
+__global__ void histogram_smem_atomics(const uint8_t *input, int *out, int size)
+{
+	__shared__ int smem[BLOCK_SIZE];
+
+	unsigned int tid = threadIdx.x;
+	unsigned int i = blockIdx.x * BLOCK_SIZE + tid;
+	unsigned int gridSize = BLOCK_SIZE * gridDim.x;
+
+	smem[tid] = 0;
+	__syncthreads();
+
+//	uint8_t pixel;
+	while (i < size) {
+
+//		pixel = input[i];
+		atomicAdd(&smem[input[i]], 1);
+
+		i += gridSize;
+	}
+	__syncthreads();
+
+	out[blockIdx.x * BLOCK_SIZE + tid] = smem[tid];
+}
+
+__global__ void histogram_final_accum(int n, int *out)
+{
+  int tid = threadIdx.x;
+  int i = tid;
+  int total = 0;
+
+  while(i < n)
+  {
+	  total += out[i];
+	  i += BLOCK_SIZE;
+  }
+  __syncthreads();
+
+  out[tid] = total;
+
+}
+
+__global__ void find_Median(int n, int *hist, int* median)
+{
+	int half_way = n / 2;
+	int sum = 0;
+
+	for (int k = 0; k < COLOR; k++) {
+		sum += hist[k];
+		if (sum > half_way) {
+			*median = k;
+			return ;
+		}
+	}
+}
+
+__global__ void find_Mtb_Ebm(const uint8_t *input, int median, uint8_t *_mtb, uint8_t *_ebm, int _height, int _width) {
+
+	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+	unsigned int idx = y * _width + x;
+
+	if (input[idx] < (median - 4) || input[idx] > (median + 4)) {
+
+		_ebm[idx] = 255;
+	} else {
+		_ebm[idx] = 0;
+	}
+
+	if (input[idx] < median) {
+
+		_mtb[idx] = 0;
+	} else {
+		_mtb[idx] = 255;
+	}
 }
 
 __global__ void AND(uint8_t* output, uint8_t* left, uint8_t *right, int width, int size) {
@@ -64,7 +124,46 @@ __global__ void XOR(uint8_t* output, uint8_t* left, uint8_t *right, int width, i
 	int index = y * width + x;
 	output[index] = left[index] ^ right[index];
 }
-//
-//#endif
 
+__global__ void count_Errors(const uint8_t *input, int *out, int size)
+{
+	__shared__ int count;
 
+	unsigned int tid = threadIdx.x;
+	unsigned int i = blockIdx.x * BLOCK_SIZE + tid;
+	unsigned int gridSize = BLOCK_SIZE * gridDim.x;
+
+	count = 0;
+
+//	uint8_t pixel;
+	while (i < size) {
+
+//		pixel = input[i];
+		if(input[i] == 255)
+		{
+			atomicAdd(&count, 1);
+		}
+
+		i += gridSize;
+	}
+
+	if(tid == 0)
+	{
+		atomicAdd(&out, count);
+	}
+}
+
+bool read_Img(char *filename, uint8_t*& img, int* width, int* height, int* bpp) {
+
+	img = stbi_load(filename, width, height, bpp, 3);
+
+	if (img) {
+		std::cout << filename << " Read Successfully\n";
+		return true;
+	} else {
+		std::cout << filename << " Reading Failed\n";
+		return false;
+	}
+}
+
+#endif
