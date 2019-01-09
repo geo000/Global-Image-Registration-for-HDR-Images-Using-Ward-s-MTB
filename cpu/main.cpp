@@ -5,6 +5,7 @@
 #include "Image.h"
 #include "helper.h"
 #include "../stb-master/stb_image_write.h"
+#include <ctime>
 
 using namespace std;
 
@@ -59,7 +60,7 @@ shift_pair calculateOffsetOfTwoImages(std::vector<Image> &all_images, int ind1, 
         }
     }
 
-    cout << "yapilmasi gereken x-y kaydirmasi: " << curr_offset_x << "  " << curr_offset_y << endl;
+    //cout << "yapilmasi gereken x-y kaydirmasi: " << curr_offset_x << "  " << curr_offset_y << endl;
 
     return shift_pair(curr_offset_x, curr_offset_y);
 }
@@ -79,11 +80,14 @@ int main(int argc, char *argv[]) {
 
     cout << "ilk part baslar ..." << endl;
 
+    //CPU TIMER STARTS
+    std::clock_t c_start = std::clock();
+
     for (int m = mid_img_index - 1; m >= 0; --m) {
         all_shifts.emplace_back(calculateOffsetOfTwoImages(all_images, m + 1, m));
     }
 
-    cout << " ilk parttaki imajlari shiftliyoruz tek tek ..." << endl;
+    //cout << " ilk parttaki imajlari shiftliyoruz tek tek ..." << endl;
 
     int k = 0, eskiTotalX = 0, eskiTotalY = 0;
     for (int m = mid_img_index - 1; m >= 0; --m) {
@@ -91,17 +95,17 @@ int main(int argc, char *argv[]) {
         eskiTotalX += all_shifts[k].x;
         eskiTotalY += all_shifts[k].y;
         k++;
-        cout << "   shiftledik: x,y " << eskiTotalX << " " << eskiTotalY << endl;
+        //cout << "   shiftledik: x,y " << eskiTotalX << " " << eskiTotalY << endl;
     }
 
-    cout << "ikinci part baslar ..." << endl;
+    //cout << "ikinci part baslar ..." << endl;
     all_shifts.clear();
 
     for (int m = mid_img_index + 1; m < all_images.size(); ++m) {
         all_shifts.emplace_back(calculateOffsetOfTwoImages(all_images, m - 1, m));
     }
 
-    cout << " ikinci parttaki imajlari shiftliyoruz tek tek ..." << endl;
+    //cout << " ikinci parttaki imajlari shiftliyoruz tek tek ..." << endl;
 
     k = 0;
     eskiTotalX = 0;
@@ -111,8 +115,14 @@ int main(int argc, char *argv[]) {
         eskiTotalX += all_shifts[k].x;
         eskiTotalY += all_shifts[k].y;
         k++;
-        cout << "   shiftledik: x,y " << eskiTotalX << " " << eskiTotalY << endl;
+        //cout << "   shiftledik: x,y " << eskiTotalX << " " << eskiTotalY << endl;
     }
+
+    // your_algorithm
+    std::clock_t c_end = std::clock();
+
+    double time_elapsed_ms = 1000.0 * (c_end - c_start) / CLOCKS_PER_SEC;
+    std::cout << "CPU time used: " << time_elapsed_ms << " ms\n";
 
     cout << "dosyaya yaziyoruz tum imajlari tek tek ..." << endl;
 
