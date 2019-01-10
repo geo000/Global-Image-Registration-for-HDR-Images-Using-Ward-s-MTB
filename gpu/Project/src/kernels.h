@@ -153,6 +153,47 @@ __global__ void count_Errors(const uint8_t *input, int *out, int size)
 	}
 }
 
+__global__ void shift_Image(uint8_t* output, uint8_t* input, int width, int height, int x_shift, int y_shift, int j_x, int i_y) {
+
+	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x + j_x;
+	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y + i_y;
+
+	int input_index = y * width + x;
+	int output_index = y_shift * width + x_shift + y * width + x;
+//	int output_index = (y_shift + y) * width + x_shift + x;
+
+	output[output_index] = input[input_index];
+
+//	if (x_shift == 0 && y_shift == 0) return;
+//
+//	int i_y, j_x, i_height, j_width;
+//
+//
+//	if(y_shift < 0) { //height i
+//		i_y = -y_shift;
+//		i_height = height;
+//	}
+//	else {
+//		i_y = 0;
+//		i_height = height - y_shift;
+//	}
+//
+//	if(x_shift < 0) {//width j
+//		j_x = -x_shift;
+//		j_width = width;
+//	}
+//	else {
+//		j_x = 0;
+//		j_width = width - x_shift;
+//	}
+//
+//	for (int i = i_y; i < i_height; ++i) {
+//		for (int j = j_x; j < j_width; ++j) {
+//			output[y_shift * width + x_shift + i * width + j] = input[i * width + j];
+//		}
+//	}
+}
+
 bool read_Img(char *filename, uint8_t*& img, int* width, int* height, int* bpp) {
 
 	img = stbi_load(filename, width, height, bpp, 3);
