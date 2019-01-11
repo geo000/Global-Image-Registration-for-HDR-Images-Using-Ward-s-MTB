@@ -10,6 +10,7 @@
 #define COLOR 256
 
 texture<unsigned char,  2,  cudaReadModeNormalizedFloat> texRef;
+texture<unsigned char,  2,  cudaReadModeNormalizedFloat> ref[30];
 
 __global__ void downsample(uint8_t* output, int width, int height) {
 
@@ -17,12 +18,16 @@ __global__ void downsample(uint8_t* output, int width, int height) {
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
 	// Read from texture and write to global memory
-	output[y * width + x] =(tex2D<unsigned char>(texRef, 2*x+1, 2*y+1))*255;
+	if(x< width && y< height)
+	{
+	output[y * width + x] =(tex2D<unsigned char>(texRef, 2*x+1, 2*y+1))*255;}
 }
 
-__global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size) {
+__global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size, int width) {
 
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int idx = y * width + x;
 
 	if (idx < size) {
 		int index = idx * 3;
@@ -86,20 +91,20 @@ __global__ void find_Median(int n, int *hist, int* median)
 	}
 }
 
-__global__ void find_Mtb_Ebm(const uint8_t *input, int median, uint8_t *_mtb, uint8_t *_ebm, int _height, int _width) {
+__global__ void find_Mtb_Ebm(const uint8_t *input, int* median, uint8_t *_mtb, uint8_t *_ebm, int _height, int _width) {
 
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 	unsigned int idx = y * _width + x;
 
-	if (input[idx] < (median - 4) || input[idx] > (median + 4)) {
+	if (input[idx] < (*median - 4) || input[idx] > (*median + 4)) {
 
 		_ebm[idx] = 255;
 	} else {
 		_ebm[idx] = 0;
 	}
 
-	if (input[idx] < median) {
+	if (input[idx] < *median) {
 
 		_mtb[idx] = 0;
 	} else {
@@ -113,7 +118,9 @@ __global__ void AND(uint8_t* output, uint8_t* left, uint8_t *right, int width, i
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
 	int index = y * width + x;
-	output[index] = left[index] & right[index];
+	if (index <size) {
+		output[index] = left[index] & right[index];
+	}
 }
 
 __global__ void XOR(uint8_t* output, uint8_t* left, uint8_t *right, int width, int size) {
@@ -122,7 +129,9 @@ __global__ void XOR(uint8_t* output, uint8_t* left, uint8_t *right, int width, i
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
 	int index = y * width + x;
-	output[index] = left[index] ^ right[index];
+	if (index <size) {
+		output[index] = left[index] ^ right[index];
+	}
 }
 
 __global__ void count_Errors(const uint8_t *input, int *out, int size)
@@ -135,10 +144,8 @@ __global__ void count_Errors(const uint8_t *input, int *out, int size)
 
 	count = 0;
 
-//	uint8_t pixel;
 	while (i < size) {
 
-//		pixel = input[i];
 		if(input[i] == 255)
 		{
 			atomicAdd(&count, 1);
