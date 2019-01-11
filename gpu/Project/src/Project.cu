@@ -109,16 +109,64 @@ int main(int argc, char* argv[]) {
 
 		find_Median<<<1, 1>>>(width*height, out, median);
 
+
+
+		uint8_t* shifted;
+		cudaMalloc((void **)&shifted, width * height *  sizeof(uint8_t));
+
+	    cudaMemset(shifted, 255, width * height *  sizeof(uint8_t));
+
+	    int x_shift=-200, y_shift=200;
+
+	    int j_x, i_y, j_width, i_height;
+
+	    if(y_shift < 0) { //height i
+			i_y = -y_shift;
+			i_height = height;
+		}
+		else {
+			i_y = 0;
+			i_height = height - y_shift;
+		}
+
+		if(x_shift < 0) {//width j
+			j_x = -x_shift;
+			j_width = width;
+		}
+		else {
+			j_x = 0;
+			j_width = width - x_shift;
+		}
+
+
+
+
+		dimBlock=dim3(16, 16);
+		dimGrid=dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
+					((i_height) + dimBlock.y - 1) / dimBlock.y);
+
+
+
+
+
+		shift_Image<<<dimGrid, dimBlock>>>(shifted, d_images_grayscale[i-1], width, height, x_shift, y_shift, j_x, i_y, j_width , i_height);
+
+
+
+
+
+
+
 //		int med[1];
 //		cudaMemcpy(med, median, sizeof(int), cudaMemcpyDeviceToHost);
 
-//		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * _width * _height);
-//
-//		cudaMemcpy(gray_images[i-1], output, sizeof(uint8_t) * _width * _height, cudaMemcpyDeviceToHost);
-//
-//		stbi_write_png("/home/berkay/Desktop/textureTest.png", _width, _height, 1, gray_images[i-1], _width);
+		gray_images[i-1] = (uint8_t*)malloc(sizeof(uint8_t) * width * height);
 
+		cudaMemcpy(gray_images[i-1], shifted, sizeof(uint8_t) * width * height, cudaMemcpyDeviceToHost);
+
+		stbi_write_png("/home/berkay/Desktop/textureTest.png", width, height, 1, gray_images[i-1], width);
 		cudaUnbindTexture(texRef);
+
 	}
 
 	printf("Done..........\n");

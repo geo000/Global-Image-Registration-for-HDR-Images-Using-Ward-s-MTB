@@ -149,20 +149,24 @@ __global__ void count_Errors(const uint8_t *input, int *out, int size)
 
 	if(tid == 0)
 	{
-		atomicAdd(&out, count);
+		atomicAdd(out, count);
 	}
 }
 
-__global__ void shift_Image(uint8_t* output, uint8_t* input, int width, int height, int x_shift, int y_shift, int j_x, int i_y) {
+__global__ void shift_Image(uint8_t* output, uint8_t* input, int width, int height, int x_shift, int y_shift, int j_x, int i_y, int j_width , int i_height) {
 
-	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x + j_x;
-	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y + i_y;
+	int j = blockIdx.x * blockDim.x + threadIdx.x + j_x;
+	int i = blockIdx.y * blockDim.y + threadIdx.y + i_y;
 
-	int input_index = y * width + x;
-	int output_index = y_shift * width + x_shift + y * width + x;
-//	int output_index = (y_shift + y) * width + x_shift + x;
+	unsigned int input_index = i * width + j;
 
-	output[output_index] = input[input_index];
+	unsigned int output_index = y_shift * width + x_shift + i * width + j;
+	//int output_index = (y_shift + i) * width + x_shift + x;
+
+	if(i < i_height && j < j_width)
+	{
+		output[output_index] = input[input_index];
+	}
 
 //	if (x_shift == 0 && y_shift == 0) return;
 //
