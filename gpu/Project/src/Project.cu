@@ -20,7 +20,11 @@ int main(int argc, char* argv[]) {
 	uint8_t* rgb_images[img_count]; //that many images are given as input.
 	uint8_t* d_rgb_images[img_count];
 
-	uint8_t* gray_image[PYRAMID_LEVEL * img_count];
+	//uint8_t* gray_image[PYRAMID_LEVEL * img_count];
+
+
+
+	float* gray_image[PYRAMID_LEVEL * img_count];
 	uint8_t* mtb[PYRAMID_LEVEL * img_count];
 	uint8_t* ebm[PYRAMID_LEVEL * img_count];
 	uint8_t* shifted_mtb[PYRAMID_LEVEL * img_count];
@@ -48,13 +52,19 @@ int main(int argc, char* argv[]) {
 
 //		texRef.normalized = false;
 //		texRef.filterMode = cudaFilterModeLinear;
-
+//		size_t pitch[30], tex_ofs[30];
 		for(int j = 0; j < PYRAMID_LEVEL; j++, tmpSizeOfImage/=4, tmpWidth/=2, tmpHeight/=2, tmpNImageSize/=4){
-			size_t pitch, tex_ofs;
-			ref[(i-1) * PYRAMID_LEVEL + j].normalized = false;
-			ref[(i-1) * PYRAMID_LEVEL + j].filterMode = cudaFilterModeLinear;
 
-			cudaMallocPitch((void**)&(gray_image[(i-1) * PYRAMID_LEVEL + j]), &pitch, tmpWidth*sizeof(unsigned char), tmpHeight);
+//			texRef.normalized = false;
+//			texRef.filterMode = cudaFilterModeLinear;
+
+			//cudaMallocPitch((void**)&(gray_image[(i-1) * PYRAMID_LEVEL + j]), &(pitch[(i-1) * PYRAMID_LEVEL + j]), tmpWidth, tmpHeight);
+
+			// Allocate CUDA array in device memory
+//			cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0, 0, 0,
+//						cudaChannelFormatKindFloat);
+//			cudaMallocArray(&(gray_image[(i-1) * PYRAMID_LEVEL + j]), &channelDesc, tmpWidth, tmpHeight);
+			cudaMalloc((void **) &(gray_image[(i-1) * PYRAMID_LEVEL + j]), tmpNImageSize*sizeof(float));
 			cudaMalloc((void **) &(mtb[(i-1) * PYRAMID_LEVEL + j]), tmpSizeOfImage);
 			cudaMalloc((void **) &(ebm[(i-1) * PYRAMID_LEVEL + j]), tmpSizeOfImage);
 			cudaMalloc((void **) &(shifted_mtb[(i-1) * PYRAMID_LEVEL + j]), tmpSizeOfImage);
@@ -66,25 +76,76 @@ int main(int argc, char* argv[]) {
 						(tmpHeight + dimBlock.y - 1) / dimBlock.y);
 
 			if(j==0){
+
 				convert2_GrayScale<<< dimGrid, dimBlock >>>(gray_image[(i-1) * PYRAMID_LEVEL + j], d_rgb_images[i-1], tmpNImageSize, tmpWidth);
 			} else {
 //				cudaBindTexture2D (&tex_ofs, &texRef, gray_image[(i-1) * PYRAMID_LEVEL + j-1], &texRef.channelDesc, tmpWidth*2, tmpHeight*2, pitch);
 //				texRef = ref[(i-1) * PYRAMID_LEVEL + j];
-				downsample<<<dimGrid, dimBlock>>>(gray_image[(i-1) * PYRAMID_LEVEL + j], tmpWidth, tmpHeight);
-				cudaDeviceSynchronize();
-				cudaUnbindTexture(texRef);
+
+				cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0, 0, 0,
+						cudaChannelFormatKindFloat);
+				cudaArray* cuArray;
+				cudaMallocArray(&cuArray, &channelDesc, tmpWidth*2, tmpHeight*2);
+
+				// Copy to device memory some data located at address h_data
+				// in host memory
+				cudaMemcpyToArray(cuArray, 0, 0, gray_image[(i-1) * PYRAMID_LEVEL + j -1], tmpNImageSize*sizeof(float)*4, cudaMemcpyDeviceToDevice);
+
+
+				// Specify texture
+				struct cudaResourceDesc resDesc;
+				memset(&resDesc, 0, sizeof(resDesc));
+				resDesc.resType = cudaResourceTypeArray;
+				resDesc.res.array.array = cuArray;
+
+				// Specify texture object parameters
+				struct cudaTextureDesc texDesc;
+				memset(&texDesc, 0, sizeof(texDesc));
+				texDesc.addressMode[0] = cudaAddressModeClamp;
+				texDesc.addressMode[1] = cudaAddressModeClamp;
+				texDesc.filterMode = cudaFilterModeLinear;
+				texDesc.readMode = cudaReadModeElementType;
+				texDesc.normalizedCoords = 1;
+
+				// Create texture object
+				cudaTextureObject_t texObj = 0;
+				cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
+
+				// Invoke kernel
+				dim3 dimBlock(16, 16);
+				dim3 dimGrid((tmpWidth + dimBlock.x - 1) / dimBlock.x,
+						(tmpHeight + dimBlock.y - 1) / dimBlock.y);
+
+				transformKernel<<<dimGrid, dimBlock>>>(gray_image[(i-1) * PYRAMID_LEVEL + j], texObj, tmpWidth, tmpHeight);
+
+
+				cudaDestroyTextureObject(texObj);
+
+				// Free device memory
+				cudaFreeArray(cuArray);
+//				downsample<<<dimGrid, dimBlock>>>(gray_image[(i-1) * PYRAMID_LEVEL + j], tmpWidth, tmpHeight);
+//				cudaDeviceSynchronize();
+//				cudaUnbindTexture(texRef);
+//				cudaFree(gray_image[(i-1) * PYRAMID_LEVEL + j-1]);
 			}
+
 //TODO benchmark using 2 kernels of histogram finding, and 1 merged kernel.
 //TODO findMedian kernel'ini de gom ustteki merge haline.
 
-			char str[12];
-			sprintf(str, "%d.png", (i-1) * PYRAMID_LEVEL + j);
-			char path[80]="/home/kca/Desktop/test_mtb";
-			strcat(path, str);
-
-			uint8_t* tmpmtb = (uint8_t *)malloc(sizeof(uint8_t)*tmpNImageSize);
-			cudaMemcpy(tmpmtb, gray_image[(i-1) * PYRAMID_LEVEL + j], sizeof(uint8_t)*tmpNImageSize, cudaMemcpyDeviceToHost);
-			stbi_write_png(path, tmpWidth, tmpHeight, 1, tmpmtb, tmpWidth);
+//			char str[12];
+//			sprintf(str, "%d.png", (i-1) * PYRAMID_LEVEL + j);
+//			char path[80]="/home/kca/Desktop/test_mtb";
+//			strcat(path, str);
+//
+//			float* tmpmtb = (float *)malloc(sizeof(float)*tmpNImageSize);
+//			cudaMemcpy(tmpmtb, gray_image[(i-1) * PYRAMID_LEVEL + j], sizeof(float)*tmpNImageSize, cudaMemcpyDeviceToHost);
+//			uint8_t* tmpmtbuint;
+//			tmpmtbuint = (uint8_t*)malloc(tmpNImageSize);
+//			for (int var = 0; var < tmpNImageSize; ++var) {
+//				tmpmtbuint[var] = tmpmtb[var];
+//			}
+//			stbi_write_png(path, tmpWidth, tmpHeight, 1, tmpmtbuint, tmpWidth);
+//
 			dimBlock=dim3(BLOCK_SIZE);
 			dimGrid=dim3(32);
 
@@ -114,9 +175,11 @@ int main(int argc, char* argv[]) {
 
 			cudaFree(hist);
 			cudaFree(median);
-			texRef = ref[(i-1) * PYRAMID_LEVEL + j];
-			cudaBindTexture2D (&tex_ofs, &texRef, gray_image[(i-1) * PYRAMID_LEVEL + j], &texRef.channelDesc,
-					tmpWidth, tmpHeight, pitch);
+
+//			cudaBindTexture2D (&(tex_ofs[(i-1) * PYRAMID_LEVEL + j]), &texRef, gray_image[(i-1) * PYRAMID_LEVEL + j], &texRef.channelDesc,
+//					tmpWidth, tmpHeight, pitch[(i-1) * PYRAMID_LEVEL + j]);
+
+
 		}
 
 //		uint8_t* shifted;

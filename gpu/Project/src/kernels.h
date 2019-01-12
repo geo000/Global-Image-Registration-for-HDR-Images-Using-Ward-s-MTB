@@ -9,21 +9,38 @@
 #define BLOCK_SIZE 256
 #define COLOR 256
 
-texture<unsigned char,  2,  cudaReadModeNormalizedFloat> texRef;
-texture<unsigned char,  2,  cudaReadModeNormalizedFloat> ref[30];
+//texture<unsigned char,  2,  cudaReadModeNormalizedFloat> texRef;
 
-__global__ void downsample(uint8_t* output, int width, int height) {
+// Simple transformation kernel
+__global__ void transformKernel(float* output, cudaTextureObject_t texObj,
+		int width, int height) {
 
+	// Calculate normalized texture coordinates
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+	float u = x / (float) width ;
+	float v = y / (float) height ;
+
 	// Read from texture and write to global memory
-	if(x< width && y< height)
-	{
-	output[y * width + x] =(tex2D<unsigned char>(texRef, 2*x+1, 2*y+1))*255;}
+
+	output[y * width + x] = tex2D<float>(texObj, u, v);
+
 }
 
-__global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size, int width) {
+
+//__global__ void downsample(uint8_t* output, int width, int height) {
+//
+//	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+//	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+//
+//	// Read from texture and write to global memory
+//	//if(x< width && y< height)
+//	//{
+//	output[y * width + x] =(tex2D<unsigned char>(texRef, 2*x+1, 2*y+1))*255;//}
+//}
+
+__global__ void convert2_GrayScale(float* gray, uint8_t *img, int size, int width) {
 
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -36,7 +53,7 @@ __global__ void convert2_GrayScale(uint8_t* gray, uint8_t *img, int size, int wi
 	}
 }
 
-__global__ void histogram_smem_atomics(const uint8_t *input, int *out, int size)
+__global__ void histogram_smem_atomics(const float *input, int *out, int size)
 {
 	__shared__ int smem[BLOCK_SIZE];
 
@@ -51,7 +68,7 @@ __global__ void histogram_smem_atomics(const uint8_t *input, int *out, int size)
 	while (i < size) {
 
 //		pixel = input[i];
-		atomicAdd(&smem[input[i]], 1);
+		atomicAdd(&smem[(int)input[i]], 1);
 
 		i += gridSize;
 	}
@@ -91,7 +108,7 @@ __global__ void find_Median(int n, int *hist, int* median)
 	}
 }
 
-__global__ void find_Mtb_Ebm(const uint8_t *input, int* median, uint8_t *_mtb, uint8_t *_ebm, int _height, int _width) {
+__global__ void find_Mtb_Ebm(const float *input, int* median, uint8_t *_mtb, uint8_t *_ebm, int _height, int _width) {
 
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
