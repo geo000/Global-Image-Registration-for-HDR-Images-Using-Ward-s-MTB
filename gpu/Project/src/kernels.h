@@ -231,103 +231,119 @@ __global__ void shift_Image(uint8_t* output, uint8_t* input, int width, int heig
 //	}
 }
 
-__global__ void calculateOffsetOfTwoImages(int first_index, int second_index, uint8_t** mtb, uint8_t** ebm, uint8_t** shifted_mtb, uint8_t** shifted_ebm, int width, int height, int* res)
-{
-	dim3 dimGrid, dimBlock;
-	int tmpWidth = width/(pow(2,PYRAMID_LEVEL-1));
-	int tmpHeight = height/(pow(2,PYRAMID_LEVEL-1));
-	int tmpNImageSize= tmpWidth * tmpHeight;
 
-	int curr_level = PYRAMID_LEVEL - 1;
-	int curr_offset_x = 0;
-	int curr_offset_y = 0;
-	int offset_return_x = 0;
-	int offset_return_y = 0;
+__global__ void finalShift(uint8_t* output, float* input, int width, int height, int x_shift, int y_shift, int j_x, int i_y, int j_width , int i_height) {
 
-	for (int k = curr_level; k >= 0; --k, tmpWidth *= 2, tmpHeight *= 2 , tmpNImageSize *= 4) {
-		curr_offset_x = 2 * offset_return_x;
-		curr_offset_y = 2 * offset_return_y;
+	int j = blockIdx.x * blockDim.x + threadIdx.x + j_x;
+	int i = blockIdx.y * blockDim.y + threadIdx.y + i_y;
 
-		int min_error = 255 * height * width;
+	unsigned int input_index = i * width + j;
 
-		for (int i = -1; i <= 1; ++i) {
-			for (int j = -1; j <= 1; ++j) {
-				int xs = curr_offset_x + i;
-				int ys = curr_offset_y + j;
+	unsigned int output_index = y_shift * width + x_shift + i * width + j;
 
-
-				int x_shift=xs, y_shift=ys; //TODO check those
-
-				int j_x, i_y, j_width, i_height;
-
-				if(y_shift < 0) { //height i
-					i_y = -y_shift;
-					i_height = tmpHeight;
-				}
-				else {
-					i_y = 0;
-					i_height = tmpHeight - y_shift;
-				}
-
-				if(x_shift < 0) {//width j
-					j_x = -x_shift;
-					j_width = tmpWidth;
-				}
-				else {
-					j_x = 0;
-					j_width = tmpWidth - x_shift;
-				}
-
-				dimBlock=dim3(16, 16);
-				dimGrid=dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
-							((i_height) + dimBlock.y - 1) / dimBlock.y);
-
-				cudaMemset((void **)shifted_mtb[second_index * PYRAMID_LEVEL + k], 0, tmpNImageSize * sizeof(uint8_t));
-				cudaMemset((void **)shifted_ebm[second_index * PYRAMID_LEVEL + k], 0, tmpNImageSize * sizeof(uint8_t));
-
-				shift_Image<<<dimGrid, dimBlock>>>(shifted_mtb[second_index * PYRAMID_LEVEL + k], mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
-				shift_Image<<<dimGrid, dimBlock>>>(shifted_ebm[second_index * PYRAMID_LEVEL + k], ebm[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
-
-				uint8_t *xor_result;
-				cudaMalloc((void **)&xor_result, tmpNImageSize * sizeof(uint8_t));
-
-				dimBlock=dim3(16, 16);
-				dimGrid=dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
-							((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
-
-				XOR<<<dimGrid, dimBlock>>>(xor_result, mtb[first_index * PYRAMID_LEVEL + k], shifted_mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpNImageSize);
-
-				uint8_t *after_first_and;
-				cudaMalloc((void **)&after_first_and, tmpNImageSize * sizeof(uint8_t));
-
-				uint8_t *after_second_and;
-				cudaMalloc((void **)&after_second_and, tmpNImageSize * sizeof(uint8_t));
-
-				AND<<<dimGrid, dimBlock>>>(after_first_and,ebm[first_index * PYRAMID_LEVEL + k], xor_result, tmpWidth, tmpNImageSize);
-
-				AND<<<dimGrid, dimBlock>>>(after_second_and,shifted_ebm[second_index * PYRAMID_LEVEL + k], after_first_and, tmpWidth, tmpNImageSize);
-
-				int* err;
-				int error;
-				//cudaMalloc((void **)&err, sizeof(int));
-
-				count_Errors<<<32, 256>>>(after_second_and, err, tmpNImageSize);
-
-				//cudaMemcpy(&error, err, sizeof(int), cudaMemcpyDeviceToHost);
-				error=*err;
-				if (error < min_error) {
-					offset_return_x = xs;
-					offset_return_y = ys;
-					min_error = error;
-				}
-				//cudaFree(err);
-			}
-		}
+	if(i < i_height && j < j_width)
+	{
+		output[output_index] = input[input_index];
 	}
-	res[0] = curr_offset_x;
-	res[1] = curr_offset_y;
-
 }
+
+//__global__ void calculateOffsetOfTwoImages(int first_index, int second_index, uint8_t** mtb, uint8_t** ebm, uint8_t** shifted_mtb, uint8_t** shifted_ebm, int width, int height, int* res)
+//{
+//	dim3 dimGrid, dimBlock;
+//	int tmpWidth = width/(pow(2,PYRAMID_LEVEL-1));
+//	int tmpHeight = height/(pow(2,PYRAMID_LEVEL-1));
+//	int tmpNImageSize= tmpWidth * tmpHeight;
+//
+//	int curr_level = PYRAMID_LEVEL - 1;
+//	int curr_offset_x = 0;
+//	int curr_offset_y = 0;
+//	int offset_return_x = 0;
+//	int offset_return_y = 0;
+//
+//	for (int k = curr_level; k >= 0; --k, tmpWidth *= 2, tmpHeight *= 2 , tmpNImageSize *= 4) {
+//		curr_offset_x = 2 * offset_return_x;
+//		curr_offset_y = 2 * offset_return_y;
+//
+//		int min_error = 255 * height * width;
+//
+//		for (int i = -1; i <= 1; ++i) {
+//			for (int j = -1; j <= 1; ++j) {
+//				int xs = curr_offset_x + i;
+//				int ys = curr_offset_y + j;
+//
+//
+//				int x_shift=xs, y_shift=ys; //TODO check those
+//
+//				int j_x, i_y, j_width, i_height;
+//
+//				if(y_shift < 0) { //height i
+//					i_y = -y_shift;
+//					i_height = tmpHeight;
+//				}
+//				else {
+//					i_y = 0;
+//					i_height = tmpHeight - y_shift;
+//				}
+//
+//				if(x_shift < 0) {//width j
+//					j_x = -x_shift;
+//					j_width = tmpWidth;
+//				}
+//				else {
+//					j_x = 0;
+//					j_width = tmpWidth - x_shift;
+//				}
+//
+//				dimBlock=dim3(16, 16);
+//				dimGrid=dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
+//							((i_height) + dimBlock.y - 1) / dimBlock.y);
+//
+//				cudaMemset((void **)shifted_mtb[second_index * PYRAMID_LEVEL + k], 0, tmpNImageSize * sizeof(uint8_t));
+//				cudaMemset((void **)shifted_ebm[second_index * PYRAMID_LEVEL + k], 0, tmpNImageSize * sizeof(uint8_t));
+//
+//				shift_Image<<<dimGrid, dimBlock>>>(shifted_mtb[second_index * PYRAMID_LEVEL + k], mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
+//				shift_Image<<<dimGrid, dimBlock>>>(shifted_ebm[second_index * PYRAMID_LEVEL + k], ebm[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
+//
+//				uint8_t *xor_result;
+//				cudaMalloc((void **)&xor_result, tmpNImageSize * sizeof(uint8_t));
+//
+//				dimBlock=dim3(16, 16);
+//				dimGrid=dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
+//							((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
+//
+//				XOR<<<dimGrid, dimBlock>>>(xor_result, mtb[first_index * PYRAMID_LEVEL + k], shifted_mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpNImageSize);
+//
+//				uint8_t *after_first_and;
+//				cudaMalloc((void **)&after_first_and, tmpNImageSize * sizeof(uint8_t));
+//
+//				uint8_t *after_second_and;
+//				cudaMalloc((void **)&after_second_and, tmpNImageSize * sizeof(uint8_t));
+//
+//				AND<<<dimGrid, dimBlock>>>(after_first_and,ebm[first_index * PYRAMID_LEVEL + k], xor_result, tmpWidth, tmpNImageSize);
+//
+//				AND<<<dimGrid, dimBlock>>>(after_second_and,shifted_ebm[second_index * PYRAMID_LEVEL + k], after_first_and, tmpWidth, tmpNImageSize);
+//
+//				int* err;
+//				int error;
+//				//cudaMalloc((void **)&err, sizeof(int));
+//
+//				count_Errors<<<32, 256>>>(after_second_and, err, tmpNImageSize);
+//
+//				//cudaMemcpy(&error, err, sizeof(int), cudaMemcpyDeviceToHost);
+//				error=*err;
+//				if (error < min_error) {
+//					offset_return_x = xs;
+//					offset_return_y = ys;
+//					min_error = error;
+//				}
+//				//cudaFree(err);
+//			}
+//		}
+//	}
+//	res[0] = curr_offset_x;
+//	res[1] = curr_offset_y;
+//
+//}
 
 
 bool read_Img(char *filename, uint8_t*& img, int* width, int* height, int* bpp) {
@@ -335,10 +351,10 @@ bool read_Img(char *filename, uint8_t*& img, int* width, int* height, int* bpp) 
 	img = stbi_load(filename, width, height, bpp, 3);
 
 	if (img) {
-		std::cout << filename << " Read Successfully\n";
+	//	std::cout << filename << " Read Successfully\n";
 		return true;
 	} else {
-		std::cout << filename << " Reading Failed\n";
+	//	std::cout << filename << " Reading Failed\n";
 		return false;
 	}
 }
