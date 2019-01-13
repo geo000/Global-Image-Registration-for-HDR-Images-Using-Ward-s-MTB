@@ -2,6 +2,7 @@
 #define __KERNELS_H__
 
 #include "device_launch_parameters.h"
+#include "cuda_runtime.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../stb-master/stb_image.h"
@@ -11,9 +12,17 @@
 #define PYRAMID_LEVEL 6
 
 typedef struct shift_pair {
+    shift_pair() {
+    	x = 0;
+    	y = 0;
+    }
     shift_pair(int _x, int _y) {
         x = _x;
         y = _y;
+    }
+    shift_pair(const shift_pair& rhs) {
+        x = rhs.x;
+        y = rhs.y;
     }
 
     int x;
@@ -379,7 +388,7 @@ bool read_Img(char *filename, uint8_t*& img, int* width, int* height, int* bpp) 
 	}
 }
 
-shift_pair calculateOffset(int first_ind, int second_ind, int width, int height, float** gray_image, uint8_t** mtb, uint8_t** ebm, uint8_t** shifted_mtb, uint8_t** shifted_ebm){
+void calculateOffset(shift_pair * shiftp, cudaStream_t stream, int first_ind, int second_ind, int width, int height, float** gray_image, uint8_t** mtb, uint8_t** ebm, uint8_t** shifted_mtb, uint8_t** shifted_ebm){
 
 	int first_index=first_ind;
 	int second_index=second_ind;
@@ -436,17 +445,8 @@ shift_pair calculateOffset(int first_ind, int second_ind, int width, int height,
 				cudaMemset(shifted_mtb[second_index * PYRAMID_LEVEL + k], 0, tmpNImageSize * sizeof(uint8_t));
 				cudaMemset(shifted_ebm[second_index * PYRAMID_LEVEL + k], 0, tmpNImageSize * sizeof(uint8_t));
 
-				shift_Image<<<dimGrid, dimBlock>>>(shifted_mtb[second_index * PYRAMID_LEVEL + k], mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
-				shift_Image<<<dimGrid, dimBlock>>>(shifted_ebm[second_index * PYRAMID_LEVEL + k], ebm[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
-
 				uint8_t *xor_result;
 				cudaMalloc((void **)&xor_result, tmpNImageSize * sizeof(uint8_t));
-
-				dimBlock=dim3(16, 16);
-				dimGrid=dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
-							((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
-
-				XOR<<<dimGrid, dimBlock>>>(xor_result, mtb[first_index * PYRAMID_LEVEL + k], shifted_mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpNImageSize);
 
 				uint8_t *after_first_and;
 				cudaMalloc((void **)&after_first_and, tmpNImageSize * sizeof(uint8_t));
@@ -454,24 +454,33 @@ shift_pair calculateOffset(int first_ind, int second_ind, int width, int height,
 				uint8_t *after_second_and;
 				cudaMalloc((void **)&after_second_and, tmpNImageSize * sizeof(uint8_t));
 
-				AND<<<dimGrid, dimBlock>>>(after_first_and,ebm[first_index * PYRAMID_LEVEL + k], xor_result, tmpWidth, tmpNImageSize);
-
-				AND<<<dimGrid, dimBlock>>>(after_second_and,shifted_ebm[second_index * PYRAMID_LEVEL + k], after_first_and, tmpWidth, tmpNImageSize);
-
 				int* err;
 				int error;
 				cudaMalloc((void **)&err, sizeof(int));
 
-				count_Errors<<<32, 256>>>(after_second_and, err, tmpNImageSize);
+				shift_Image<<<dimGrid, dimBlock, 0, stream>>>(shifted_mtb[second_index * PYRAMID_LEVEL + k], mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
+				shift_Image<<<dimGrid, dimBlock, 0, stream>>>(shifted_ebm[second_index * PYRAMID_LEVEL + k], ebm[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpHeight, xs, ys, j_x, i_y, j_width , i_height);
 
-				cudaMemcpy(&error, err, sizeof(int), cudaMemcpyDeviceToHost);
+				dimBlock=dim3(16, 16);
+				dimGrid=dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
+							((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
+
+				XOR<<<dimGrid, dimBlock, 0, stream>>>(xor_result, mtb[first_index * PYRAMID_LEVEL + k], shifted_mtb[second_index * PYRAMID_LEVEL + k], tmpWidth, tmpNImageSize);
+
+				AND<<<dimGrid, dimBlock, 0, stream>>>(after_first_and,ebm[first_index * PYRAMID_LEVEL + k], xor_result, tmpWidth, tmpNImageSize);
+
+				AND<<<dimGrid, dimBlock, 0, stream>>>(after_second_and,shifted_ebm[second_index * PYRAMID_LEVEL + k], after_first_and, tmpWidth, tmpNImageSize);
+
+				count_Errors<<<32, 256, 0, stream>>>(after_second_and, err, tmpNImageSize);
+
+				cudaMemcpy(&error, err, sizeof(int), cudaMemcpyDeviceToHost); //CANNOT BE ASYNC
 
 				if (error < min_error) {
 					offset_return_x = xs;
 					offset_return_y = ys;
 					min_error = error;
 				}
-				cudaFree(err);
+				//cudaFree(err);
 			}
 		}
 	}
@@ -526,8 +535,12 @@ shift_pair calculateOffset(int first_ind, int second_ind, int width, int height,
 //
 //	stbi_write_png(path, tmpWidth, tmpHeight, 1, tmpmtb, tmpWidth);
 
+	shiftp->x = curr_offset_x;
+	shiftp->y = curr_offset_y;
 
-	return shift_pair(curr_offset_x, curr_offset_y);
+	//return shift_pair(curr_offset_x, curr_offset_y);
+
+	//pthread_exit(NULL);
 }
 
 
