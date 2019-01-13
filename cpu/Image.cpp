@@ -48,10 +48,10 @@ bool Image::read_Img(char *filename) {
     img = stbi_load(filename, &width, &height, &bpp, 3);
 
     if (img) {
-        std::cout << filename << " Read Successfully\n";
+        //std::cout << filename << " Read Successfully\n";
         return true;
     } else {
-        std::cout << filename << " Reading Failed\n";
+        //std::cout << filename << " Reading Failed\n";
         return false;
     }
 }
