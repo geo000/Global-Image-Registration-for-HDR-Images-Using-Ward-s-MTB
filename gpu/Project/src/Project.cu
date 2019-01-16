@@ -1,3 +1,6 @@
+// Kadir Berkay Aydemir
+// Kadir Cenk Alpay
+
 //TODO dynamic parallelism kullanamadik kernel icinde kernel. cok kasti. cudaMalloc vs dinamik size'da yapamadik kernel icinde.
 //TODO texture cok vaktimizi aldi. (2 gün totalde) globalden texRef alan yontem imaj piramidinin bazi levellarinda calismadi,
 //TODO benchmark using 2 kernels of histogram finding, and 1 merged kernel.
@@ -11,12 +14,15 @@
 //TODO ustteki satir icin: gtx850m -> 343.15 ms (2k fotolar 5 tane), 933.248 ms (4k fotolar, 5 tane).
 //TODO aynisini CPU (fully optimized -O3 var, ama single threaded)-> 1237.07ms (2k fotolar 5 tane) 3885.8ms (4k fotolar 5 tane)
 //TODO CPU multithread yazdik alignment algo. kismina, aksine yavaslatti 4011.04 ms oldu 4k 5 foto. 1401.87 ms 2k 5 foto. (gtx850m)
+//TODO #define THREAD_COUNT 16 yapmistik tum yukaridaki sonuclari. 32 ve 8 denedik, sure degismedi.
 
 #include <iostream>
 #include <vector>
 #include <pthread.h>
 #include "cuda_runtime.h"
 #include "kernels.h"
+
+#define THREAD_COUNT 16
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../stb-master/stb_image_write.h"
@@ -81,7 +87,7 @@ void* calculateOffset(void * args) {
 					j_width = tmpWidth - x_shift;
 				}
 
-				dimBlock = dim3(16, 16);
+				dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
 				dimGrid = dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
 						((i_height) + dimBlock.y - 1) / dimBlock.y);
 
@@ -115,7 +121,7 @@ void* calculateOffset(void * args) {
 						ebm[second_index * PYRAMID_LEVEL + k], tmpWidth,
 						tmpHeight, xs, ys, j_x, i_y, j_width, i_height);
 
-				dimBlock = dim3(16, 16);
+				dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
 				dimGrid = dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
 						((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
 
@@ -219,7 +225,7 @@ int main(int argc, char* argv[]) {
 					tmpSizeOfImage);
 
 			dim3 dimGrid, dimBlock;
-			dimBlock = dim3(16, 16);
+			dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
 			dimGrid = dim3((tmpWidth + dimBlock.x - 1) / dimBlock.x,
 					(tmpHeight + dimBlock.y - 1) / dimBlock.y);
 
@@ -265,7 +271,7 @@ int main(int argc, char* argv[]) {
 				cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
 
 				// Invoke kernel
-				dim3 dimBlock(16, 16);
+				dim3 dimBlock(THREAD_COUNT, THREAD_COUNT);
 				dim3 dimGrid((tmpWidth + dimBlock.x - 1) / dimBlock.x,
 						(tmpHeight + dimBlock.y - 1) / dimBlock.y);
 
@@ -301,7 +307,7 @@ int main(int argc, char* argv[]) {
 			find_Median<<<1, 1, 0, streams[i - 1]>>>(tmpNImageSize, hist,
 					median);
 
-			dimBlock = dim3(16, 16);
+			dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
 			dimGrid = dim3((tmpWidth + dimBlock.x - 1) / dimBlock.x,
 					(tmpHeight + dimBlock.y - 1) / dimBlock.y);
 
@@ -417,7 +423,7 @@ int main(int argc, char* argv[]) {
 			j_width = tmpWidth - x_shift;
 		}
 
-		dim3 dimBlock = dim3(16, 16);
+		dim3 dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
 		dim3 dimGrid = dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
 				((i_height) + dimBlock.y - 1) / dimBlock.y);
 
@@ -463,7 +469,7 @@ int main(int argc, char* argv[]) {
 			j_width = tmpWidth - x_shift;
 		}
 
-		dim3 dimBlock = dim3(16, 16);
+		dim3 dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
 		dim3 dimGrid = dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
 				((i_height) + dimBlock.y - 1) / dimBlock.y);
 
@@ -480,7 +486,7 @@ int main(int argc, char* argv[]) {
 	cudaEventSynchronize(stop);
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
-	cout << milliseconds << endl;
+	cout << milliseconds <<" ms total (including read img + memcopies, excluding write output)" << endl;
 
 	cudaDeviceSynchronize();
 
@@ -520,7 +526,7 @@ int main(int argc, char* argv[]) {
 
 	stbi_write_png(path, tmpWidth, tmpHeight, 3, tmpmtb, tmpWidth * 3);
 
-	//printf("Done..........\n");
+	printf("Done..........\n");
 
 	return 0;
 }
