@@ -1,4 +1,7 @@
+// Implementation is done by:
+// Kadir Cenk Alpay
 // Kadir Berkay Aydemir
+// until the rotation part. Rotation part is done only by:
 // Kadir Cenk Alpay
 
 //TODO dynamic parallelism kullanamadik kernel icinde kernel. cok kasti. cudaMalloc vs dinamik size'da yapamadik kernel icinde.
