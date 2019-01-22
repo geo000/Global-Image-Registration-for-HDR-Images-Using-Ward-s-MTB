@@ -27,7 +27,7 @@
 								<option id="nvcc.compiler.option.level.1757324697" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level" value="true" valueType="boolean"/>
 								<option defaultValue="nvcc.compiler.optimization.level.none" id="nvcc.compiler.optimization.level.1625750567" name="Optimization Level" superClass="nvcc.compiler.optimization.level" valueType="enumerated"/>
 								<option id="nvcc.compiler.pic.1888432157" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
-								<option id="nvcc.compiler.ptxasoptions.1997294401" name="ptaxas options (-Xptxas)" superClass="nvcc.compiler.ptxasoptions" valueType="stringList"/>
+								<option id="nvcc.compiler.ptxasoptions.1997294401" name="ptaxas options (-Xptxas)" superClass="nvcc.compiler.ptxasoptions"/>
 								<option id="nvcc.compiler.verbose.1262808071" name="Verbose (-v)" superClass="nvcc.compiler.verbose" value="false" valueType="boolean"/>
 								<option id="nvcc.compiler.optionsfile.245160479" name="Command line options file (-optf)" superClass="nvcc.compiler.optionsfile" value="" valueType="string"/>
 								<inputType id="nvcc.compiler.input.cu.2137768868" superClass="nvcc.compiler.input.cu"/>
@@ -86,16 +86,17 @@
 							<tool id="nvcc.compiler.base.1658524551" name="NVCC Compiler" superClass="nvcc.compiler.base">
 								<option id="nvcc.compiler.deviceDebug.410439676" name="Generate device debug information (-G)" superClass="nvcc.compiler.deviceDebug"/>
 								<option id="nvcc.compiler.option.level.1902944013" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level"/>
-								<option defaultValue="nvcc.compiler.optimization.level.most" id="nvcc.compiler.optimization.level.1085802261" name="Optimization Level" superClass="nvcc.compiler.optimization.level" valueType="enumerated"/>
+								<option defaultValue="nvcc.compiler.optimization.level.most" id="nvcc.compiler.optimization.level.1085802261" name="Optimization Level" superClass="nvcc.compiler.optimization.level" value="nvcc.compiler.optimization.level.most" valueType="enumerated"/>
 								<option id="nvcc.compiler.pic.63383974" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
-								<option id="nvcc.compiler.ptxasoptions.149537051" name="ptaxas options (-Xptxas)" superClass="nvcc.compiler.ptxasoptions" valueType="stringList">
-									<listOptionValue builtIn="false" value="-arch=sm_11"/>
-								</option>
+								<option id="nvcc.compiler.ptxasoptions.149537051" name="ptaxas options (-Xptxas)" superClass="nvcc.compiler.ptxasoptions"/>
 								<inputType id="nvcc.compiler.input.cu.527788721" superClass="nvcc.compiler.input.cu"/>
 								<inputType id="nvcc.compiler.input.cpp.1941391188" superClass="nvcc.compiler.input.cpp"/>
 								<inputType id="nvcc.compiler.input.c.1619864128" superClass="nvcc.compiler.input.c"/>
 							</tool>
 							<tool id="nvcc.linker.base.345762750" name="NVCC Linker" superClass="nvcc.linker.base">
+								<option id="nvcc.linker.option.libs.805721717" name="Libraries (-l)" superClass="nvcc.linker.option.libs" valueType="libs">
+									<listOptionValue builtIn="false" value="pthread"/>
+								</option>
 								<inputType id="nvcc.linker.input.1018248169" superClass="nvcc.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 									<additionalInput kind="additionalinput" paths="$(LIBS)"/>
@@ -116,10 +117,9 @@
 			<storageModule moduleId="com.nvidia.cuda.ide.build.project.ICudaProjectConfiguration">
 				<executable devicelink="false">
 					<sass major="5" minor="0"/>
-					<sass major="6" minor="1"/>
 					<ptx major="5" minor="0"/>
-					<ptx major="6" minor="1"/>
 				</executable>
+				<editor-arch major="5" minor="0"/>
 			</storageModule>
 		</cconfiguration>
 	</storageModule>
@@ -150,4 +150,5 @@
 			<resource resourceType="PROJECT" workspacePath="/Project"/>
 		</configuration>
 	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 </cproject>
