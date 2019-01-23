@@ -15,18 +15,22 @@ typedef struct shift_pair {
 	shift_pair() {
 		x = 0;
 		y = 0;
+		angle_ind = 0;
 	}
 	shift_pair(int _x, int _y) {
 		x = _x;
 		y = _y;
+		angle_ind = 0;
 	}
 	shift_pair(const shift_pair& rhs) {
 		x = rhs.x;
 		y = rhs.y;
+		angle_ind = rhs.angle_ind;
 	}
 
 	int x;
 	int y;
+	int angle_ind;
 } shift_pair;
 
 typedef struct arg_struct {
@@ -41,6 +45,30 @@ typedef struct arg_struct {
 	uint8_t** shifted_mtb;
 	uint8_t** shifted_ebm;
 } arguments;
+
+__global__ void rotate(uint8_t* dst, uint8_t* src, int sizeX, int sizeY,
+		float deg) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x; // Kernel definition
+	int j = blockIdx.y * blockDim.y + threadIdx.y;
+	int xc = sizeX - sizeX / 2;
+	int yc = sizeY - sizeY / 2;
+	int newx = ((float) i - xc) * cos(deg) - ((float) j - yc) * sin(deg) + xc;
+	int newy = ((float) i - xc) * sin(deg) + ((float) j - yc) * cos(deg) + yc;
+
+	int indis1 = j * sizeX + i;
+	int indis2 = newy * sizeX + newx;
+
+	indis1 *= 3;
+	indis2 *= 3;
+
+	if (newx >= 0 && newx < sizeX && newy >= 0 && newy < sizeY) {
+		dst[indis1++] = src[indis2++];
+		dst[indis1++] = src[indis2++];
+		dst[indis1] = src[indis2];
+
+		//putPixVal(Destination, sizeX, i , j, ImgSrc[y*ImgWidth+x]);
+	}
+}
 
 // Simple transformation kernel
 __global__ void transformKernel(float* output, cudaTextureObject_t texObj,

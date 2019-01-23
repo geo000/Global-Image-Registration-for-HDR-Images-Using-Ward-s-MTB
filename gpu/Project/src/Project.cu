@@ -29,6 +29,10 @@
 
 using namespace std;
 
+int TOTAL_ANGLE_STEP = 1;
+int MID_ANGLE_INDEX = 0;
+float step = 0.0f;
+
 void* calculateOffset(void * args) {
 
 	arguments *_arg;
@@ -39,122 +43,164 @@ void* calculateOffset(void * args) {
 	int first_index = _arg->first_ind;
 	int second_index = _arg->second_ind;
 	dim3 dimGrid, dimBlock;
-	int tmpWidth = width / (pow(2, PYRAMID_LEVEL - 1));
-	int tmpHeight = height / (pow(2, PYRAMID_LEVEL - 1));
-	int tmpNImageSize = tmpWidth * tmpHeight;
-
 	uint8_t** mtb = _arg->mtb;
 	uint8_t** ebm = _arg->ebm;
 	uint8_t** shifted_mtb = _arg->shifted_mtb;
 	uint8_t** shifted_ebm = _arg->shifted_ebm;
 	cudaStream_t stream = _arg->stream;
 
-	int curr_level = PYRAMID_LEVEL - 1;
-	int curr_offset_x = 0;
-	int curr_offset_y = 0;
-	int offset_return_x = 0;
-	int offset_return_y = 0;
+	int angle_min_error = 255 * height * width + 1;
+	int angle_return_x;
+	int angle_return_y;
+	int angle_return_angle_ind;
 
-	for (int k = curr_level; k >= 0;
-			--k, tmpWidth *= 2, tmpHeight *= 2, tmpNImageSize *= 4) {
-		curr_offset_x = 2 * offset_return_x;
-		curr_offset_y = 2 * offset_return_y;
+	for (int var = 0; var < TOTAL_ANGLE_STEP; ++var) {
+
+		int tmpWidth = width / (pow(2, PYRAMID_LEVEL - 1));
+		int tmpHeight = height / (pow(2, PYRAMID_LEVEL - 1));
+		int tmpNImageSize = tmpWidth * tmpHeight;
+
+		int curr_level = PYRAMID_LEVEL - 1;
+		int curr_offset_x = 0;
+		int curr_offset_y = 0;
+		int offset_return_x = 0;
+		int offset_return_y = 0;
 
 		int min_error = 255 * height * width;
 
-		for (int i = -1; i <= 1; ++i) {
-			for (int j = -1; j <= 1; ++j) {
-				int xs = curr_offset_x + i;
-				int ys = curr_offset_y + j;
+		for (int k = curr_level; k >= 0;
+				--k, tmpWidth *= 2, tmpHeight *= 2, tmpNImageSize *= 4) {
+			curr_offset_x = 2 * offset_return_x;
+			curr_offset_y = 2 * offset_return_y;
 
-				int x_shift = xs, y_shift = ys; //TODO check those
+			min_error = 255 * height * width;
 
-				int j_x, i_y, j_width, i_height;
+			for (int i = -1; i <= 1; ++i) {
+				for (int j = -1; j <= 1; ++j) {
+					int xs = curr_offset_x + i;
+					int ys = curr_offset_y + j;
 
-				if (y_shift < 0) { //height i
-					i_y = -y_shift;
-					i_height = tmpHeight;
-				} else {
-					i_y = 0;
-					i_height = tmpHeight - y_shift;
+					int x_shift = xs, y_shift = ys;
+
+					int j_x, i_y, j_width, i_height;
+
+					if (y_shift < 0) { //height i
+						i_y = -y_shift;
+						i_height = tmpHeight;
+					} else {
+						i_y = 0;
+						i_height = tmpHeight - y_shift;
+					}
+
+					if (x_shift < 0) { //width j
+						j_x = -x_shift;
+						j_width = tmpWidth;
+					} else {
+						j_x = 0;
+						j_width = tmpWidth - x_shift;
+					}
+
+					dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
+					dimGrid = dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
+							((i_height) + dimBlock.y - 1) / dimBlock.y);
+
+					cudaMemset(
+							shifted_mtb[second_index * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + k],
+							0, tmpNImageSize * sizeof(uint8_t));
+					cudaMemset(
+							shifted_ebm[second_index * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + k],
+							0, tmpNImageSize * sizeof(uint8_t));
+
+					uint8_t *xor_result;
+					cudaMalloc((void **) &xor_result,
+							tmpNImageSize * sizeof(uint8_t));
+
+					uint8_t *after_first_and;
+					cudaMalloc((void **) &after_first_and,
+							tmpNImageSize * sizeof(uint8_t));
+
+					uint8_t *after_second_and;
+					cudaMalloc((void **) &after_second_and,
+							tmpNImageSize * sizeof(uint8_t));
+
+					int* err;
+					int error;
+					cudaMalloc((void **) &err, sizeof(int));
+
+					shift_Image<<<dimGrid, dimBlock, 0, stream>>>(
+							shifted_mtb[second_index * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + k],
+							mtb[second_index * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+									+ var * PYRAMID_LEVEL + k], tmpWidth,
+							tmpHeight, xs, ys, j_x, i_y, j_width, i_height);
+
+					shift_Image<<<dimGrid, dimBlock, 0, stream>>>(
+							shifted_ebm[second_index * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + k],
+							ebm[second_index * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+									+ var * PYRAMID_LEVEL + k], tmpWidth,
+							tmpHeight, xs, ys, j_x, i_y, j_width, i_height);
+
+					dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
+					dimGrid = dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
+							((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
+
+					XOR<<<dimGrid, dimBlock, 0, stream>>>(xor_result,
+							mtb[first_index * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+									+ MID_ANGLE_INDEX * PYRAMID_LEVEL + k],
+							shifted_mtb[second_index * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + k],
+							tmpWidth, tmpNImageSize);
+
+					AND<<<dimGrid, dimBlock, 0, stream>>>(after_first_and,
+							ebm[first_index * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+									+ MID_ANGLE_INDEX * PYRAMID_LEVEL + k],
+							xor_result, tmpWidth, tmpNImageSize);
+
+					AND<<<dimGrid, dimBlock, 0, stream>>>(after_second_and,
+							shifted_ebm[second_index * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + k],
+							after_first_and, tmpWidth, tmpNImageSize);
+
+					count_Errors<<<32, 256, 0, stream>>>(after_second_and, err,
+							tmpNImageSize);
+
+					cudaMemcpy(&error, err, sizeof(int),
+							cudaMemcpyDeviceToHost); //CANNOT BE ASYNC
+
+					if (error < min_error) {
+						offset_return_x = xs;
+						offset_return_y = ys;
+						min_error = error;
+					}
+
+					cudaFree(xor_result);
+					cudaFree(after_first_and);
+					cudaFree(after_second_and);
+//					cudaFree(err);
+
 				}
-
-				if (x_shift < 0) { //width j
-					j_x = -x_shift;
-					j_width = tmpWidth;
-				} else {
-					j_x = 0;
-					j_width = tmpWidth - x_shift;
-				}
-
-				dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
-				dimGrid = dim3(((j_width) + dimBlock.x - 1) / dimBlock.x,
-						((i_height) + dimBlock.y - 1) / dimBlock.y);
-
-				cudaMemset(shifted_mtb[second_index * PYRAMID_LEVEL + k], 0,
-						tmpNImageSize * sizeof(uint8_t));
-				cudaMemset(shifted_ebm[second_index * PYRAMID_LEVEL + k], 0,
-						tmpNImageSize * sizeof(uint8_t));
-
-				uint8_t *xor_result;
-				cudaMalloc((void **) &xor_result,
-						tmpNImageSize * sizeof(uint8_t));
-
-				uint8_t *after_first_and;
-				cudaMalloc((void **) &after_first_and,
-						tmpNImageSize * sizeof(uint8_t));
-
-				uint8_t *after_second_and;
-				cudaMalloc((void **) &after_second_and,
-						tmpNImageSize * sizeof(uint8_t));
-
-				int* err;
-				int error;
-				cudaMalloc((void **) &err, sizeof(int));
-
-				shift_Image<<<dimGrid, dimBlock, 0, stream>>>(
-						shifted_mtb[second_index * PYRAMID_LEVEL + k],
-						mtb[second_index * PYRAMID_LEVEL + k], tmpWidth,
-						tmpHeight, xs, ys, j_x, i_y, j_width, i_height);
-				shift_Image<<<dimGrid, dimBlock, 0, stream>>>(
-						shifted_ebm[second_index * PYRAMID_LEVEL + k],
-						ebm[second_index * PYRAMID_LEVEL + k], tmpWidth,
-						tmpHeight, xs, ys, j_x, i_y, j_width, i_height);
-
-				dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
-				dimGrid = dim3(((tmpWidth) + dimBlock.x - 1) / dimBlock.x,
-						((tmpHeight) + dimBlock.y - 1) / dimBlock.y);
-
-				XOR<<<dimGrid, dimBlock, 0, stream>>>(xor_result,
-						mtb[first_index * PYRAMID_LEVEL + k],
-						shifted_mtb[second_index * PYRAMID_LEVEL + k], tmpWidth,
-						tmpNImageSize);
-
-				AND<<<dimGrid, dimBlock, 0, stream>>>(after_first_and,
-						ebm[first_index * PYRAMID_LEVEL + k], xor_result,
-						tmpWidth, tmpNImageSize);
-
-				AND<<<dimGrid, dimBlock, 0, stream>>>(after_second_and,
-						shifted_ebm[second_index * PYRAMID_LEVEL + k],
-						after_first_and, tmpWidth, tmpNImageSize);
-
-				count_Errors<<<32, 256, 0, stream>>>(after_second_and, err,
-						tmpNImageSize);
-
-				cudaMemcpy(&error, err, sizeof(int), cudaMemcpyDeviceToHost); //CANNOT BE ASYNC
-
-				if (error < min_error) {
-					offset_return_x = xs;
-					offset_return_y = ys;
-					min_error = error;
-				}
-				//cudaFree(err);
 			}
 		}
+
+		if (min_error < angle_min_error) {
+			angle_min_error = min_error;
+			angle_return_x = offset_return_x;
+			angle_return_y = offset_return_y;
+			angle_return_angle_ind = var;
+		}
+
 	}
 
-	_arg->shiftp->x = curr_offset_x;
-	_arg->shiftp->y = curr_offset_y;
+	_arg->shiftp->x = angle_return_x;
+	_arg->shiftp->y = angle_return_y;
+	_arg->shiftp->angle_ind = angle_return_angle_ind;
+
+	cout << "found x and y, angle_index, min_error: " << angle_return_x << " "
+			<< angle_return_y << " " << angle_return_angle_ind << " "
+			<< angle_min_error << endl;
 
 	pthread_exit(NULL);
 }
@@ -170,7 +216,14 @@ int main(int argc, char* argv[]) {
 		return 0;
 	}
 
+	if (argc == 3) { //2 images, include rotation
+		TOTAL_ANGLE_STEP = 13;
+		MID_ANGLE_INDEX = TOTAL_ANGLE_STEP / 2;
+		step = 0.2f;
+	}
+
 	int img_count = argc - 1;
+	int mid_img_index = img_count / 2;
 
 	int num_threads = img_count;
 	pthread_t threads[num_threads];
@@ -179,13 +232,69 @@ int main(int argc, char* argv[]) {
 	uint8_t* rgb_images[img_count]; //that many images are given as input.
 	uint8_t* shifted_rgb_images[img_count];
 	uint8_t* d_rgb_images[img_count];
-	float* gray_image[PYRAMID_LEVEL * img_count];
-	uint8_t* mtb[PYRAMID_LEVEL * img_count];
-	uint8_t* ebm[PYRAMID_LEVEL * img_count];
-	uint8_t* shifted_mtb[PYRAMID_LEVEL * img_count];
-	uint8_t* shifted_ebm[PYRAMID_LEVEL * img_count];
+	uint8_t* d_rotated_rgb_images[img_count * TOTAL_ANGLE_STEP];
+	float* gray_image[PYRAMID_LEVEL * img_count * TOTAL_ANGLE_STEP];
+	uint8_t* mtb[PYRAMID_LEVEL * img_count * TOTAL_ANGLE_STEP];
+	uint8_t* ebm[PYRAMID_LEVEL * img_count * TOTAL_ANGLE_STEP];
+	uint8_t* shifted_mtb[PYRAMID_LEVEL * img_count * TOTAL_ANGLE_STEP];
+	uint8_t* shifted_ebm[PYRAMID_LEVEL * img_count * TOTAL_ANGLE_STEP];
 
-	//cudaMalloc((void **) &d_images, sizeof(GPUImage)*PYRAMID_LEVEL*img_count);
+//	if (!strcmp(argv[1], "rotate") && argc == 3) {
+//		//make rotation and exit
+//		if (!read_Img(argv[2], rgb_images[0], &width, &height, &bpp)) {
+//			printf("Could not read image.");
+//			return 0;
+//		}
+//
+//		int nImageSize = width * height; //total pixel count of the image.
+//		size_t sizeOfImage = nImageSize * sizeof(uint8_t); //size of source image where each pixel is converted to uint8_t.
+//
+//		cudaMalloc((void **) &d_rgb_images[0], sizeOfImage * 3);
+//		cudaMemcpy(d_rgb_images[0], rgb_images[0], sizeOfImage * 3,
+//				cudaMemcpyHostToDevice);
+//
+//		cudaDeviceSynchronize();
+//
+//		//Kernel preparation
+//		dim3 dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
+//		dim3 dimGrid = dim3((width + dimBlock.x - 1) / dimBlock.x,
+//				(height + dimBlock.y - 1) / dimBlock.y);
+//
+//		//Get the rotated versions of the second image ready
+//		for (int var = 0; var < TOTAL_ANGLE_STEP; ++var) {
+//			float step = 0.2f;
+//			float angle = ((-1.0f + (var * step)) * M_PI) / 180.0f;
+//
+//			cudaMalloc(
+//					(void **) &(d_rotated_rgb_images[(0) * TOTAL_ANGLE_STEP
+//							+ var]), sizeOfImage * 3);
+//			cudaMemset(d_rotated_rgb_images[(0) * TOTAL_ANGLE_STEP + var], 0,
+//					sizeOfImage * 3);
+//
+//			//Rotate the images
+//			rotate<<<dimGrid, dimBlock>>>(
+//					d_rotated_rgb_images[(0) * TOTAL_ANGLE_STEP + var],
+//					d_rgb_images[0], width, height, angle);
+//
+//			cudaDeviceSynchronize();
+//
+//			char str[22];
+//			sprintf(str, "%d.jpg", var);
+//			char path[90] = "/home/kca/Desktop/rotatedimg";
+//			strcat(path, str);
+//
+//			uint8_t* tmpmtb = (uint8_t *) malloc(sizeOfImage * 3);
+//			cudaMemcpy(tmpmtb,
+//					d_rotated_rgb_images[(0) * TOTAL_ANGLE_STEP + var],
+//					sizeOfImage * 3, cudaMemcpyDeviceToHost);
+//
+//			stbi_write_jpg(path, width, height, 3, tmpmtb, width * 3);
+//		}
+//
+//		//rotated images are ready
+//
+//		return 0;
+//	}
 
 	cudaStream_t streams[img_count];
 
@@ -205,117 +314,165 @@ int main(int argc, char* argv[]) {
 		cudaMemcpyAsync(d_rgb_images[i - 1], rgb_images[i - 1], sizeOfImage * 3,
 				cudaMemcpyHostToDevice, streams[i - 1]);
 
-		int tmpSizeOfImage = sizeOfImage;
-		int tmpWidth = width;
-		int tmpHeight = height;
-		int tmpNImageSize = nImageSize;
+		cudaDeviceSynchronize();
 
-		for (int j = 0; j < PYRAMID_LEVEL; j++, tmpSizeOfImage /= 4, tmpWidth /=
-				2, tmpHeight /= 2, tmpNImageSize /= 4) {
+		//Kernel preparation
+		dim3 dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
+		dim3 dimGrid = dim3((width + dimBlock.x - 1) / dimBlock.x,
+				(height + dimBlock.y - 1) / dimBlock.y);
 
-			cudaMalloc((void **) &(gray_image[(i - 1) * PYRAMID_LEVEL + j]),
-					tmpNImageSize * sizeof(float));
-			cudaMalloc((void **) &(mtb[(i - 1) * PYRAMID_LEVEL + j]),
-					tmpSizeOfImage);
-			cudaMalloc((void **) &(ebm[(i - 1) * PYRAMID_LEVEL + j]),
-					tmpSizeOfImage);
-			cudaMalloc((void **) &(shifted_mtb[(i - 1) * PYRAMID_LEVEL + j]),
-					tmpSizeOfImage);
-			cudaMalloc((void **) &(shifted_ebm[(i - 1) * PYRAMID_LEVEL + j]),
-					tmpSizeOfImage);
+		//Get the rotated versions of the second image ready
+		for (int var = 0; var < TOTAL_ANGLE_STEP; ++var) {
+			float angle = (((-1.0f * (TOTAL_ANGLE_STEP / 2) * step)
+					+ (var * step)) * M_PI) / 180.0f;
 
-			dim3 dimGrid, dimBlock;
-			dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
-			dimGrid = dim3((tmpWidth + dimBlock.x - 1) / dimBlock.x,
-					(tmpHeight + dimBlock.y - 1) / dimBlock.y);
+			cudaMalloc(
+					(void **) &(d_rotated_rgb_images[(i - 1) * TOTAL_ANGLE_STEP
+							+ var]), sizeOfImage * 3);
+			cudaMemset(d_rotated_rgb_images[(i - 1) * TOTAL_ANGLE_STEP + var],
+					0, sizeOfImage * 3);
 
-			if (j == 0) {
-				convert2_GrayScale<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
-						gray_image[(i - 1) * PYRAMID_LEVEL + j],
-						d_rgb_images[i - 1], tmpNImageSize, tmpWidth);
-				//cudaDeviceSynchronize();
-			} else {
-//				cudaBindTexture2D (&tex_ofs, &texRef, gray_image[(i-1) * PYRAMID_LEVEL + j-1], &texRef.channelDesc, tmpWidth*2, tmpHeight*2, pitch);
-//				texRef = ref[(i-1) * PYRAMID_LEVEL + j];
+			//Rotate the images
+			rotate<<<dimGrid, dimBlock>>>(
+					d_rotated_rgb_images[(i - 1) * TOTAL_ANGLE_STEP + var],
+					d_rgb_images[i - 1], width, height, angle);
 
-				cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0,
-						0, 0, cudaChannelFormatKindFloat);
-				cudaArray* cuArray;
-				cudaMallocArray(&cuArray, &channelDesc, tmpWidth * 2,
-						tmpHeight * 2);
+		}
 
-				// Copy to device memory some data located at address h_data
-				// in host memory
-				cudaMemcpyToArray(cuArray, 0, 0,
-						gray_image[(i - 1) * PYRAMID_LEVEL + j - 1],
-						tmpNImageSize * sizeof(float) * 4,
-						cudaMemcpyDeviceToDevice);
+		//rotated images are ready
+		cudaDeviceSynchronize();
 
-				// Specify texture
-				struct cudaResourceDesc resDesc;
-				memset(&resDesc, 0, sizeof(resDesc));
-				resDesc.resType = cudaResourceTypeArray;
-				resDesc.res.array.array = cuArray;
+		for (int var = 0; var < TOTAL_ANGLE_STEP; ++var) {
 
-				// Specify texture object parameters
-				struct cudaTextureDesc texDesc;
-				memset(&texDesc, 0, sizeof(texDesc));
-				texDesc.addressMode[0] = cudaAddressModeClamp;
-				texDesc.addressMode[1] = cudaAddressModeClamp;
-				texDesc.filterMode = cudaFilterModeLinear;
-				texDesc.readMode = cudaReadModeElementType;
-				texDesc.normalizedCoords = 1;
+			int tmpSizeOfImage = sizeOfImage;
+			int tmpWidth = width;
+			int tmpHeight = height;
+			int tmpNImageSize = nImageSize;
 
-				// Create texture object
-				cudaTextureObject_t texObj = 0;
-				cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
+			for (int j = 0; j < PYRAMID_LEVEL;
+					j++, tmpSizeOfImage /= 4, tmpWidth /= 2, tmpHeight /= 2, tmpNImageSize /=
+							4) {
 
-				// Invoke kernel
-				dim3 dimBlock(THREAD_COUNT, THREAD_COUNT);
-				dim3 dimGrid((tmpWidth + dimBlock.x - 1) / dimBlock.x,
+				cudaMalloc(
+						(void **) &(gray_image[(i - 1) * PYRAMID_LEVEL
+								* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j]),
+						tmpNImageSize * sizeof(float));
+				cudaMalloc(
+						(void **) &(mtb[(i - 1) * PYRAMID_LEVEL
+								* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j]),
+						tmpSizeOfImage);
+				cudaMalloc(
+						(void **) &(ebm[(i - 1) * PYRAMID_LEVEL
+								* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j]),
+						tmpSizeOfImage);
+				cudaMalloc(
+						(void **) &(shifted_mtb[(i - 1) * PYRAMID_LEVEL
+								* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j]),
+						tmpSizeOfImage);
+				cudaMalloc(
+						(void **) &(shifted_ebm[(i - 1) * PYRAMID_LEVEL
+								* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j]),
+						tmpSizeOfImage);
+
+				dim3 dimGrid, dimBlock;
+				dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
+				dimGrid = dim3((tmpWidth + dimBlock.x - 1) / dimBlock.x,
 						(tmpHeight + dimBlock.y - 1) / dimBlock.y);
 
-				transformKernel<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
-						gray_image[(i - 1) * PYRAMID_LEVEL + j], texObj,
-						tmpWidth, tmpHeight);
+				if (j == 0) {
+					convert2_GrayScale<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
+							gray_image[(i - 1) * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j],
+							d_rotated_rgb_images[(i - 1) * TOTAL_ANGLE_STEP
+									+ var], tmpNImageSize, tmpWidth);
 
-				//cudaDestroyTextureObject(texObj);
+				} else {
 
-				// Free device memory
-				//cudaFreeArray(cuArray);
+					cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(
+							32, 0, 0, 0, cudaChannelFormatKindFloat);
+					cudaArray* cuArray;
+					cudaMallocArray(&cuArray, &channelDesc, tmpWidth * 2,
+							tmpHeight * 2);
+
+					// Copy to device memory some data located at address h_data
+					// in host memory
+					cudaMemcpyToArray(cuArray, 0, 0,
+							gray_image[(i - 1) * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j
+									- 1], tmpNImageSize * sizeof(float) * 4,
+							cudaMemcpyDeviceToDevice);
+
+					// Specify texture
+					struct cudaResourceDesc resDesc;
+					memset(&resDesc, 0, sizeof(resDesc));
+					resDesc.resType = cudaResourceTypeArray;
+					resDesc.res.array.array = cuArray;
+
+					// Specify texture object parameters
+					struct cudaTextureDesc texDesc;
+					memset(&texDesc, 0, sizeof(texDesc));
+					texDesc.addressMode[0] = cudaAddressModeClamp;
+					texDesc.addressMode[1] = cudaAddressModeClamp;
+					texDesc.filterMode = cudaFilterModeLinear;
+					texDesc.readMode = cudaReadModeElementType;
+					texDesc.normalizedCoords = 1;
+
+					// Create texture object
+					cudaTextureObject_t texObj = 0;
+					cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
+
+					// Invoke kernel
+					dim3 dimBlock(THREAD_COUNT, THREAD_COUNT);
+					dim3 dimGrid((tmpWidth + dimBlock.x - 1) / dimBlock.x,
+							(tmpHeight + dimBlock.y - 1) / dimBlock.y);
+
+					transformKernel<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
+							gray_image[(i - 1) * PYRAMID_LEVEL
+									* TOTAL_ANGLE_STEP + var * PYRAMID_LEVEL + j],
+							texObj, tmpWidth, tmpHeight);
+
+					//cudaDestroyTextureObject(texObj);
+
+					// Free device memory
+					//cudaFreeArray(cuArray);
 //				downsample<<<dimGrid, dimBlock>>>(gray_image[(i-1) * PYRAMID_LEVEL + j], tmpWidth, tmpHeight);
 //				cudaDeviceSynchronize();
 //				cudaUnbindTexture(texRef);gray_image
 //				cudaFree(gray_image[(i-1) * PYRAMID_LEVEL + j-1]);
+				}
+
+				dimBlock = dim3(BLOCK_SIZE);
+				dimGrid = dim3(32);
+
+				int* hist;
+				cudaMalloc((void **) &hist, BLOCK_SIZE * sizeof(int) * 32);
+
+				histogram_smem_atomics<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
+						gray_image[(i - 1) * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+								+ var * PYRAMID_LEVEL + j], hist,
+						tmpNImageSize);
+				histogram_final_accum<<<1, 256, 0, streams[i - 1]>>>(
+				BLOCK_SIZE * dimGrid.x, hist);
+
+				int* median;
+				cudaMalloc((void **) &median, sizeof(int));
+				find_Median<<<1, 1, 0, streams[i - 1]>>>(tmpNImageSize, hist,
+						median);
+
+				dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
+				dimGrid = dim3((tmpWidth + dimBlock.x - 1) / dimBlock.x,
+						(tmpHeight + dimBlock.y - 1) / dimBlock.y);
+
+				find_Mtb_Ebm<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
+						gray_image[(i - 1) * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+								+ var * PYRAMID_LEVEL + j], median,
+						mtb[(i - 1) * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+								+ var * PYRAMID_LEVEL + j],
+						ebm[(i - 1) * PYRAMID_LEVEL * TOTAL_ANGLE_STEP
+								+ var * PYRAMID_LEVEL + j], tmpHeight,
+						tmpWidth);
+
 			}
-
-//
-			dimBlock = dim3(BLOCK_SIZE);
-			dimGrid = dim3(32);
-
-			int* hist;
-			cudaMalloc((void **) &hist, BLOCK_SIZE * sizeof(int) * 32);
-
-			histogram_smem_atomics<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
-					gray_image[(i - 1) * PYRAMID_LEVEL + j], hist,
-					tmpNImageSize);
-			histogram_final_accum<<<1, 256, 0, streams[i - 1]>>>(
-					BLOCK_SIZE * dimGrid.x, hist);
-
-			int* median;
-			cudaMalloc((void **) &median, sizeof(int));
-			find_Median<<<1, 1, 0, streams[i - 1]>>>(tmpNImageSize, hist,
-					median);
-
-			dimBlock = dim3(THREAD_COUNT, THREAD_COUNT);
-			dimGrid = dim3((tmpWidth + dimBlock.x - 1) / dimBlock.x,
-					(tmpHeight + dimBlock.y - 1) / dimBlock.y);
-
-			find_Mtb_Ebm<<<dimGrid, dimBlock, 0, streams[i - 1]>>>(
-					gray_image[(i - 1) * PYRAMID_LEVEL + j], median,
-					mtb[(i - 1) * PYRAMID_LEVEL + j],
-					ebm[(i - 1) * PYRAMID_LEVEL + j], tmpHeight, tmpWidth);
-
 		}
 
 	}
@@ -328,8 +485,6 @@ int main(int argc, char* argv[]) {
 
 //**********************************************************************************************************************************
 	shift_pair all_shifts[img_count];
-
-	int mid_img_index = img_count / 2; //TODO belki +1.
 
 	for (int m = mid_img_index - 1; m >= 0; --m) {
 		arguments* args = (arguments *) malloc(sizeof(arguments));
@@ -428,7 +583,9 @@ int main(int argc, char* argv[]) {
 				((i_height) + dimBlock.y - 1) / dimBlock.y);
 
 		RGB_shift_Image<<<dimGrid, dimBlock, 0, streams[m]>>>(
-				shifted_rgb_images[m], d_rgb_images[m], tmpWidth, tmpHeight,
+				shifted_rgb_images[m],
+				d_rotated_rgb_images[m * TOTAL_ANGLE_STEP
+						+ all_shifts[m].angle_ind], tmpWidth, tmpHeight,
 				x_shift, y_shift, j_x, i_y, j_width, i_height);
 
 		eskiTotalX += all_shifts[m].x;
@@ -474,7 +631,9 @@ int main(int argc, char* argv[]) {
 				((i_height) + dimBlock.y - 1) / dimBlock.y);
 
 		RGB_shift_Image<<<dimGrid, dimBlock, 0, streams[m]>>>(
-				shifted_rgb_images[m], d_rgb_images[m], tmpWidth, tmpHeight,
+				shifted_rgb_images[m],
+				d_rotated_rgb_images[m * TOTAL_ANGLE_STEP
+						+ all_shifts[m].angle_ind], tmpWidth, tmpHeight,
 				x_shift, y_shift, j_x, i_y, j_width, i_height);
 
 		eskiTotalX += all_shifts[m].x;
@@ -486,12 +645,14 @@ int main(int argc, char* argv[]) {
 	cudaEventSynchronize(stop);
 	float milliseconds = 0;
 	cudaEventElapsedTime(&milliseconds, start, stop);
-	cout << milliseconds <<" ms total (including read img + memcopies, excluding write output)" << endl;
+	cout << milliseconds
+			<< " ms total (including read img + memcopies, excluding write output)"
+			<< endl;
 
 	cudaDeviceSynchronize();
 
 	//print original grayscale img
-//	stbi_write_png(path, width, height, 3, rgb_images[mid_img_index], width*3);
+//	stbi_write_jpg(path, width, height, 3, rgb_images[mid_img_index], width*3);
 
 	int tmpNImageSize = height * width;
 	int tmpHeight = height;
@@ -504,7 +665,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		char str[12];
-		sprintf(str, "%d.png", var);
+		sprintf(str, "%d.jpg", var);
 		char path[80] = "/home/kca/Desktop/img";
 		strcat(path, str);
 
@@ -513,10 +674,10 @@ int main(int argc, char* argv[]) {
 		cudaMemcpy(tmpmtb, shifted_rgb_images[var],
 				sizeof(uint8_t) * tmpNImageSize * 3, cudaMemcpyDeviceToHost);
 
-		stbi_write_png(path, tmpWidth, tmpHeight, 3, tmpmtb, tmpWidth * 3);
+		stbi_write_jpg(path, tmpWidth, tmpHeight, 3, tmpmtb, tmpWidth * 3);
 	}
 	char str[12];
-	sprintf(str, "%d.png", mid_img_index);
+	sprintf(str, "%d.jpg", mid_img_index);
 	char path[80] = "/home/kca/Desktop/img";
 	strcat(path, str);
 
@@ -524,7 +685,7 @@ int main(int argc, char* argv[]) {
 	cudaMemcpy(tmpmtb, d_rgb_images[mid_img_index],
 			sizeof(uint8_t) * tmpNImageSize * 3, cudaMemcpyDeviceToHost);
 
-	stbi_write_png(path, tmpWidth, tmpHeight, 3, tmpmtb, tmpWidth * 3);
+	stbi_write_jpg(path, tmpWidth, tmpHeight, 3, tmpmtb, tmpWidth * 3);
 
 	printf("Done..........\n");
 
